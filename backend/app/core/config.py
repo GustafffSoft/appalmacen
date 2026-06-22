@@ -22,6 +22,8 @@ class Settings:
         self.pallet_max_weight_kg_default = float(os.getenv('PALLET_MAX_WEIGHT_KG_DEFAULT', '900'))
         self.max_download_size_mb = int(os.getenv('MAX_DOWNLOAD_SIZE_MB', '15'))
         self.tesseract_cmd = os.getenv('TESSERACT_CMD', '')
+        self.openai_api_key = os.getenv('OPENAI_API_KEY', '')
+        self.openai_model = os.getenv('OPENAI_MODEL', 'gpt-5.2')
         self.upload_dir = BASE_DIR / 'uploads'
         self.log_dir = BASE_DIR / 'logs'
         self.allowed_image_extensions = {'.jpg', '.jpeg', '.png'}

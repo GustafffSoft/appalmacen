@@ -24,12 +24,16 @@ def _score_text(text: str) -> int:
 
 def _prepare_variants(image: Image.Image) -> list[Image.Image]:
     base = ImageOps.exif_transpose(image).convert('L')
-    enlarged = base.resize((base.width * 2, base.height * 2))
-    high_contrast = ImageEnhance.Contrast(enlarged).enhance(2.5)
+    max_dimension = 1800
+    if max(base.width, base.height) > max_dimension:
+        base.thumbnail((max_dimension, max_dimension))
+    elif max(base.width, base.height) < 1200:
+        base = base.resize((base.width * 2, base.height * 2))
+
+    high_contrast = ImageEnhance.Contrast(base).enhance(2.3)
     sharpened = high_contrast.filter(ImageFilter.SHARPEN)
     thresholded = sharpened.point(lambda value: 255 if value > 165 else 0)
-    soft_threshold = sharpened.point(lambda value: 255 if value > 140 else 0)
-    return [enlarged, sharpened, thresholded, soft_threshold]
+    return [sharpened, thresholded]
 
 
 def extract_text_from_image(image_path: Path) -> str:
@@ -51,14 +55,20 @@ def extract_text_from_image(image_path: Path) -> str:
     configs = [
         '--oem 3 --psm 6',
         '--oem 3 --psm 11',
-        '--oem 3 --psm 4',
     ]
 
     best_text = ''
     best_score = -1
     for variant in variants:
         for config in configs:
-            text = pytesseract.image_to_string(variant, config=config).strip()
+            try:
+                text = pytesseract.image_to_string(
+                    variant,
+                    config=config,
+                    timeout=15,
+                ).strip()
+            except RuntimeError:
+                continue
             score = _score_text(text)
             if score > best_score:
                 best_score = score

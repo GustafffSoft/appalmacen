@@ -48,7 +48,8 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
 
   Future<void> _pickInvoiceDate() async {
     final now = DateTime.now();
-    final initial = DateTime.tryParse(_invoiceDateController.text.trim()) ?? now;
+    final initial =
+        DateTime.tryParse(_invoiceDateController.text.trim()) ?? now;
     final picked = await showDatePicker(
       context: context,
       initialDate: initial,
@@ -63,7 +64,9 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
 
   Future<void> _createOrder() async {
     if (_qtyBySku.isEmpty) {
-      setState(() => _message = 'Selecciona al menos un producto con cantidad.');
+      setState(
+        () => _message = 'Selecciona al menos un producto con cantidad.',
+      );
       return;
     }
 
@@ -88,9 +91,9 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
 
     try {
       final orderId = await context.read<OrderService>().createOrder(
-            items: items,
-            invoiceData: invoiceData,
-          );
+        items: items,
+        invoiceData: invoiceData,
+      );
       if (!mounted) return;
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(builder: (_) => OrderDetailPage(orderId: orderId)),
@@ -118,7 +121,10 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
               width: double.infinity,
               color: Colors.black,
               padding: const EdgeInsets.all(12),
-              child: Text(_message!, style: const TextStyle(color: Colors.white)),
+              child: Text(
+                _message!,
+                style: const TextStyle(color: Colors.white),
+              ),
             ),
           Padding(
             padding: const EdgeInsets.all(12),
@@ -126,7 +132,9 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
               children: [
                 TextField(
                   controller: _invoiceNumberController,
-                  decoration: const InputDecoration(labelText: 'Numero de invoice'),
+                  decoration: const InputDecoration(
+                    labelText: 'Numero de invoice',
+                  ),
                 ),
                 const SizedBox(height: 8),
                 Row(
@@ -134,14 +142,18 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
                     Expanded(
                       child: TextField(
                         controller: _storeNumberController,
-                        decoration: const InputDecoration(labelText: 'Numero de tienda'),
+                        decoration: const InputDecoration(
+                          labelText: 'Numero de tienda',
+                        ),
                       ),
                     ),
                     const SizedBox(width: 8),
                     Expanded(
                       child: TextField(
                         controller: _storeNameController,
-                        decoration: const InputDecoration(labelText: 'Nombre de tienda'),
+                        decoration: const InputDecoration(
+                          labelText: 'Nombre de tienda',
+                        ),
                       ),
                     ),
                   ],
@@ -169,7 +181,9 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
               stream: firebaseService.watchProducts(),
               builder: (context, snapshot) {
                 if (snapshot.hasError) {
-                  return Center(child: Text('Error cargando productos: ${snapshot.error}'));
+                  return Center(
+                    child: Text('Error cargando productos: ${snapshot.error}'),
+                  );
                 }
                 if (!snapshot.hasData) {
                   return const Center(child: CircularProgressIndicator());
@@ -178,13 +192,15 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
                 final docs = snapshot.data!.docs;
                 if (docs.isEmpty) {
                   return const Center(
-                    child: Text('No hay productos. Usa el menu lateral para agregar productos.'),
+                    child: Text(
+                      'No hay productos. Usa el menu lateral para agregar productos.',
+                    ),
                   );
                 }
 
                 return ListView.separated(
                   itemCount: docs.length,
-                  separatorBuilder: (_, __) => const Divider(height: 1),
+                  separatorBuilder: (_, _) => const Divider(height: 1),
                   itemBuilder: (context, index) {
                     final data = docs[index].data();
                     final sku = data['sku']?.toString() ?? docs[index].id;
@@ -194,14 +210,15 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
                     final l = data['lengthCm'];
                     final w = data['widthCm'];
                     final h = data['heightCm'];
+                    final dims = [l, w, h].join('x');
                     final qty = _qtyBySku[sku] ?? 0;
 
                     return ListTile(
                       title: Text('$sku - $name'),
                       subtitle: Text(
                         secondName != null && secondName.isNotEmpty
-                            ? '$secondName\nCaja aprox: ${l}x${w}x${h} in | ${weight} kg'
-                            : 'Caja aprox: ${l}x${w}x${h} in | ${weight} kg',
+                            ? '$secondName\nCaja aprox: $dims in | $weight kg'
+                            : 'Caja aprox: $dims in | $weight kg',
                       ),
                       isThreeLine: secondName != null && secondName.isNotEmpty,
                       trailing: Row(
@@ -216,7 +233,9 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
                             child: Text(
                               '$qty',
                               textAlign: TextAlign.center,
-                              style: const TextStyle(fontWeight: FontWeight.bold),
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                              ),
                             ),
                           ),
                           IconButton(
@@ -241,10 +260,15 @@ class _CreateOrderPageState extends State<CreateOrderPage> {
                     ? const SizedBox(
                         width: 16,
                         height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
                       )
                     : const Icon(Icons.check),
-                label: Text(_creating ? 'Creando orden...' : 'Crear Orden con Productos'),
+                label: Text(
+                  _creating ? 'Creando orden...' : 'Crear Orden con Productos',
+                ),
               ),
             ),
           ),

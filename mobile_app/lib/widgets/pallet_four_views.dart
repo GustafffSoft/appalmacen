@@ -109,7 +109,8 @@ class PalletFourViews extends StatelessWidget {
       final placedW = _toDouble(row['widthCm'], meta.w);
       final placedH = _toDouble(row['heightCm'], meta.h);
       final placedName = row['name']?.toString() ?? meta.name;
-      final dimLabel = placedL.toStringAsFixed(0) + 'x' + placedW.toStringAsFixed(0) + 'x' + placedH.toStringAsFixed(0) + ' in';
+      final dimLabel =
+          '${placedL.toStringAsFixed(0)}x${placedW.toStringAsFixed(0)}x${placedH.toStringAsFixed(0)} in';
 
       switch (type) {
         case _ViewType.front:
@@ -191,7 +192,12 @@ class _ViewSpec {
 enum _ViewType { front, right, back, left }
 
 class _BoxMeta {
-  _BoxMeta({required this.name, required this.l, required this.w, required this.h});
+  _BoxMeta({
+    required this.name,
+    required this.l,
+    required this.w,
+    required this.h,
+  });
   final String name;
   final double l;
   final double w;
@@ -264,7 +270,12 @@ class _PalletCanvas extends StatelessWidget {
 }
 
 class _PalletPainter extends CustomPainter {
-  _PalletPainter(this.placements, this.sideLabel, this.sideIn, this.maxHeightIn);
+  _PalletPainter(
+    this.placements,
+    this.sideLabel,
+    this.sideIn,
+    this.maxHeightIn,
+  );
   final List<_Placement2D> placements;
   final String sideLabel;
   final double sideIn;
@@ -300,7 +311,12 @@ class _PalletPainter extends CustomPainter {
     canvas.drawRect(contentRect, frame);
 
     final baseFill = Paint()..color = const Color(0xFFE4E4E4);
-    final baseRect = Rect.fromLTWH(leftBound, baseTop, rightBound - leftBound, baseThickness);
+    final baseRect = Rect.fromLTWH(
+      leftBound,
+      baseTop,
+      rightBound - leftBound,
+      baseThickness,
+    );
     canvas.drawRect(baseRect, baseFill);
     canvas.drawRect(baseRect, frame);
 
@@ -310,8 +326,12 @@ class _PalletPainter extends CustomPainter {
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1;
 
-    final usableWidth = (rightBound - leftBound - 2).clamp(1, double.infinity).toDouble();
-    final usableHeight = (baseTop - topBound - 2).clamp(1, double.infinity).toDouble();
+    final usableWidth = (rightBound - leftBound - 2)
+        .clamp(1, double.infinity)
+        .toDouble();
+    final usableHeight = (baseTop - topBound - 2)
+        .clamp(1, double.infinity)
+        .toDouble();
 
     final projectedEntries = <_DrawEntry>[];
     for (final p in placements) {
@@ -331,11 +351,7 @@ class _PalletPainter extends CustomPainter {
       }
 
       projectedEntries.add(
-        _DrawEntry(
-          placement: p,
-          rect: clipped,
-          visibleRatio: 1,
-        ),
+        _DrawEntry(placement: p, rect: clipped, visibleRatio: 1),
       );
     }
 
@@ -360,7 +376,9 @@ class _PalletPainter extends CustomPainter {
 
       // Only draw if at least a meaningful visible face remains.
       if (ratio >= 0.12) {
-        visible.add(_DrawEntry(placement: e.placement, rect: e.rect, visibleRatio: ratio));
+        visible.add(
+          _DrawEntry(placement: e.placement, rect: e.rect, visibleRatio: ratio),
+        );
       }
 
       occluders.add(e.rect);
@@ -425,8 +443,20 @@ class _PalletPainter extends CustomPainter {
 
     canvas.restore();
 
-    _drawHorizontalDimension(canvas, leftBound, rightBound, baseBottom + 10, '$sideLabel: ${sideIn.toStringAsFixed(0)} in');
-    _drawVerticalDimension(canvas, rightBound + 20, baseTop, topBound, 'Max H\n${maxHeightIn.toStringAsFixed(0)} in\n(83-86 in)');
+    _drawHorizontalDimension(
+      canvas,
+      leftBound,
+      rightBound,
+      baseBottom + 10,
+      '$sideLabel: ${sideIn.toStringAsFixed(0)} in',
+    );
+    _drawVerticalDimension(
+      canvas,
+      rightBound + 20,
+      baseTop,
+      topBound,
+      'Max H\n${maxHeightIn.toStringAsFixed(0)} in\n(83-86 in)',
+    );
   }
 
   double _unionOverlapArea(Rect target, List<Rect> occluders) {
@@ -482,7 +512,13 @@ class _PalletPainter extends CustomPainter {
     return total.clamp(0, targetArea).toDouble();
   }
 
-  void _drawHorizontalDimension(Canvas canvas, double left, double right, double y, String label) {
+  void _drawHorizontalDimension(
+    Canvas canvas,
+    double left,
+    double right,
+    double y,
+    String label,
+  ) {
     final line = Paint()
       ..color = Colors.black
       ..strokeWidth = 1;
@@ -494,7 +530,11 @@ class _PalletPainter extends CustomPainter {
     final tp = TextPainter(
       text: TextSpan(
         text: label,
-        style: const TextStyle(color: Colors.black, fontSize: 10, fontWeight: FontWeight.w600),
+        style: const TextStyle(
+          color: Colors.black,
+          fontSize: 10,
+          fontWeight: FontWeight.w600,
+        ),
       ),
       textDirection: TextDirection.ltr,
       maxLines: 1,
@@ -504,7 +544,13 @@ class _PalletPainter extends CustomPainter {
     tp.paint(canvas, Offset(left + ((right - left - tp.width) / 2), y + 2));
   }
 
-  void _drawVerticalDimension(Canvas canvas, double x, double bottomY, double topY, String label) {
+  void _drawVerticalDimension(
+    Canvas canvas,
+    double x,
+    double bottomY,
+    double topY,
+    String label,
+  ) {
     final line = Paint()
       ..color = Colors.black
       ..strokeWidth = 1;
@@ -516,14 +562,21 @@ class _PalletPainter extends CustomPainter {
     final tp = TextPainter(
       text: TextSpan(
         text: label,
-        style: const TextStyle(color: Colors.black, fontSize: 9, fontWeight: FontWeight.w600),
+        style: const TextStyle(
+          color: Colors.black,
+          fontSize: 9,
+          fontWeight: FontWeight.w600,
+        ),
       ),
       textDirection: TextDirection.ltr,
       maxLines: 3,
       textAlign: TextAlign.center,
     )..layout(maxWidth: 40);
 
-    tp.paint(canvas, Offset(x - (tp.width / 2), (topY + bottomY - tp.height) / 2));
+    tp.paint(
+      canvas,
+      Offset(x - (tp.width / 2), (topY + bottomY - tp.height) / 2),
+    );
   }
 
   void _drawArrowHead(Canvas canvas, Offset tip, Offset dir) {
@@ -558,7 +611,3 @@ class _Seg {
   final double a;
   final double b;
 }
-
-
-
-

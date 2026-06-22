@@ -1,6 +1,12 @@
 import 'package:flutter/foundation.dart';
 
-const _backendWeb = 'http://127.0.0.1:8000';
-const _backendMobile = 'http://10.0.0.248:8000';
+const _backendOverride = String.fromEnvironment('BACKEND_BASE_URL');
+const _backendWeb = 'https://appalmacen-backend.onrender.com';
+const _backendMobile = 'https://appalmacen-backend.onrender.com';
 
-String get backendBaseUrl => kIsWeb ? _backendWeb : _backendMobile;
+String get backendBaseUrl {
+  if (_backendOverride.isNotEmpty) {
+    return _backendOverride;
+  }
+  return kIsWeb ? _backendWeb : _backendMobile;
+}

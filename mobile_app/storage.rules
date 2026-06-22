@@ -1,0 +1,28 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function profile() {
+      return firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function warehouse() {
+      return signedIn()
+        && profile().active == true
+        && (profile().role == 'admin' || profile().role == 'warehouse');
+    }
+
+    match /warehouse_pallets/{allPaths=**} {
+      allow read, write: if warehouse();
+    }
+
+    match /{allPaths=**} {
+      allow read: if signedIn() && profile().active == true;
+      allow write: if warehouse();
+    }
+  }
+}

@@ -3,10 +3,11 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException
 
 from app.core.config import get_settings
-from app.models.schemas import PalletRequest, ProcessOrderRequest, ProcessOrderResponse
+from app.models.schemas import PalletAiReview, PalletRequest, ProcessOrderRequest, ProcessOrderResponse
 from app.services.firebase_service import save_pallet_plan, update_order_status
 from app.services.image_service import download_image
 from app.services.invoice_identification_service import identify_products_from_invoice
+from app.services.openai_service import OpenAIConfigurationError, review_pallet_plan_with_ai
 from app.services.pallet_service import run_palletizing
 
 router = APIRouter(prefix="/orders", tags=["orders"])
@@ -32,8 +33,29 @@ def _normalize_pallet(request_pallet: PalletRequest | None, settings) -> PalletR
     )
 
 
+async def _build_ai_review(boxes, pallet_views, overall_stats, pallet, packing_log) -> PalletAiReview | None:
+    try:
+        review_payload, model = await review_pallet_plan_with_ai(
+            pallet=pallet,
+            boxes=boxes,
+            pallets=pallet_views,
+            stats=overall_stats,
+            packing_log=packing_log,
+        )
+    except OpenAIConfigurationError:
+        return None
+    except Exception as exc:  # noqa: BLE001
+        return PalletAiReview(
+            riskLevel="unknown",
+            finalAnswer=f"No se pudo generar la respuesta final IA del pallet. Usa el layout visual calculado por el sistema. Detalle tecnico: {exc}",
+        )
+
+    review_payload["model"] = model
+    return PalletAiReview(**review_payload)
+
+
 @router.post("/{orderId}/process", response_model=ProcessOrderResponse)
-def process_order(orderId: str, request: ProcessOrderRequest) -> ProcessOrderResponse:
+async def process_order(orderId: str, request: ProcessOrderRequest) -> ProcessOrderResponse:
     settings = get_settings()
 
     pallet = _normalize_pallet(request.pallet, settings)
@@ -56,6 +78,14 @@ def process_order(orderId: str, request: ProcessOrderRequest) -> ProcessOrderRes
         if not pallet_views:
             raise ValueError("No boxes could be packed into any pallet.")
 
+        ai_review = await _build_ai_review(
+            boxes,
+            pallet_views,
+            overall_stats,
+            pallet,
+            packing_log,
+        )
+
         first_pallet = pallet_views[0]
 
         response = ProcessOrderResponse(
@@ -70,6 +100,7 @@ def process_order(orderId: str, request: ProcessOrderRequest) -> ProcessOrderRes
             palletCount=len(pallet_views),
             pallets=pallet_views,
             packingLog=packing_log,
+            aiReview=ai_review,
         )
 
         payload = response.model_dump(mode="json")

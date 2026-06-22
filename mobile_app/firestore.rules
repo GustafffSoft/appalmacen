@@ -1,0 +1,96 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function profile() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function active() {
+      return signedIn() && profile().active == true;
+    }
+
+    function hasRole(role) {
+      return active() && profile().role == role;
+    }
+
+    function admin() {
+      return hasRole('admin');
+    }
+
+    function warehouse() {
+      return admin() || hasRole('warehouse');
+    }
+
+    function sales() {
+      return admin() || hasRole('sales');
+    }
+
+    match /users/{uid} {
+      allow read: if signedIn() && (request.auth.uid == uid || admin());
+      allow create: if signedIn()
+        && request.auth.uid == uid
+        && request.resource.data.email == request.auth.token.email
+        && (
+          (request.auth.token.email == 'gustafff93s@gmail.com'
+            && request.resource.data.role == 'admin'
+            && request.resource.data.active == true)
+          ||
+          (request.auth.token.email != 'gustafff93s@gmail.com'
+            && request.resource.data.role == 'pending'
+            && request.resource.data.active == false)
+        );
+      allow update: if admin();
+      allow delete: if false;
+    }
+
+    match /products/{document=**} {
+      allow read: if active();
+      allow write: if warehouse() || sales();
+    }
+
+    match /orders/{document=**} {
+      allow read, write: if active();
+    }
+
+    match /pallet_plans/{document=**} {
+      allow read, write: if active();
+    }
+
+    match /warehouse_pallets/{document=**} {
+      allow read, write: if warehouse();
+    }
+
+    match /warehouse_racks/{document=**} {
+      allow read, write: if warehouse();
+    }
+
+    match /invoices/{document=**} {
+      allow read, write: if warehouse();
+    }
+
+    match /prospects/{document=**} {
+      allow read, write: if sales();
+    }
+
+    match /suppliers/{document=**} {
+      allow read, write: if sales();
+    }
+
+    match /supplier_prices/{document=**} {
+      allow read, write: if sales();
+    }
+
+    match /sales_messages/{document=**} {
+      allow read, write: if sales();
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

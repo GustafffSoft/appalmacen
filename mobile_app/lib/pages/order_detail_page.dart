@@ -48,6 +48,7 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
   }
 
   Future<void> _uploadPhoto() async {
+    final firebaseService = context.read<FirebaseService>();
     final source = await _pickImageSource();
     if (source == null) return;
 
@@ -60,17 +61,19 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
       _loadingReason = 'Subiendo imagen del invoice a Firebase Storage...';
     });
     try {
-      final firebaseService = context.read<FirebaseService>();
-      await firebaseService.uploadOrderImage(orderId: widget.orderId, file: picked);
+      await firebaseService.uploadOrderImage(
+        orderId: widget.orderId,
+        file: picked,
+      );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Invoice subido correctamente')),
       );
     } catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error subiendo invoice: $error')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Error subiendo invoice: $error')));
     } finally {
       if (mounted) {
         setState(() {
@@ -82,17 +85,18 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
   }
 
   Future<void> _processOrder(Map<String, dynamic> order) async {
+    final firebaseService = context.read<FirebaseService>();
+    final orderService = context.read<OrderService>();
     final imageUrl = order['imageUrl']?.toString();
 
     setState(() {
       _processing = true;
-      _loadingReason = 'Procesando productos: creando pallets necesarios y vistas por cada pallet...';
+      _loadingReason =
+          'Procesando productos: creando pallets y generando revision IA...';
     });
     try {
-      final firebaseService = context.read<FirebaseService>();
       await firebaseService.updateOrderStatus(widget.orderId, 'processing');
 
-      final orderService = context.read<OrderService>();
       await orderService.processOrder(
         orderId: widget.orderId,
         imageUrl: imageUrl,
@@ -101,19 +105,20 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Orden procesada. Se generaron pallets y vistas.')),
+        const SnackBar(
+          content: Text('Orden procesada. Se generaron pallets y revision IA.'),
+        ),
       );
     } catch (error) {
-      final firebaseService = context.read<FirebaseService>();
       await firebaseService.updateOrderStatus(
         widget.orderId,
         'error',
         extra: {'errorMessage': error.toString()},
       );
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error procesando orden: $error')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Error procesando orden: $error')));
     } finally {
       if (mounted) {
         setState(() {
@@ -134,7 +139,9 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
         stream: firebaseService.watchOrder(widget.orderId),
         builder: (context, orderSnapshot) {
           if (orderSnapshot.hasError) {
-            return Center(child: Text('Error cargando orden: ${orderSnapshot.error}'));
+            return Center(
+              child: Text('Error cargando orden: ${orderSnapshot.error}'),
+            );
           }
           if (!orderSnapshot.hasData || !orderSnapshot.data!.exists) {
             return const Center(child: CircularProgressIndicator());
@@ -174,7 +181,10 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text('Estado: $status', style: const TextStyle(fontWeight: FontWeight.bold)),
+                        Text(
+                          'Estado: $status',
+                          style: const TextStyle(fontWeight: FontWeight.bold),
+                        ),
                         const SizedBox(height: 8),
                         SelectableText('Invoice URL (opcional): $imageUrl'),
                         const SizedBox(height: 8),
@@ -183,7 +193,9 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
                         if (items.isEmpty)
                           const Text('- Sin items en la orden')
                         else
-                          ...items.map((it) => Text('- ${it['sku']} x ${it['qty']}')),
+                          ...items.map(
+                            (it) => Text('- ${it['sku']} x ${it['qty']}'),
+                          ),
                       ],
                     ),
                   ),
@@ -199,13 +211,22 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
                           ? const SizedBox(
                               width: 16,
                               height: 16,
-                              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
                             )
                           : const Icon(Icons.upload_file),
-                      label: Text(_uploading ? 'Subiendo invoice...' : 'Subir Invoice (Opcional)'),
+                      label: Text(
+                        _uploading
+                            ? 'Subiendo invoice...'
+                            : 'Subir Invoice (Opcional)',
+                      ),
                     ),
                     OutlinedButton.icon(
-                      onPressed: _processing ? null : () => _processOrder(order),
+                      onPressed: _processing
+                          ? null
+                          : () => _processOrder(order),
                       icon: _processing
                           ? const SizedBox(
                               width: 16,
@@ -213,7 +234,11 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
                               child: CircularProgressIndicator(strokeWidth: 2),
                             )
                           : const Icon(Icons.view_in_ar),
-                      label: Text(_processing ? 'Calculando pallets...' : 'Procesar Pallets'),
+                      label: Text(
+                        _processing
+                            ? 'Calculando con IA...'
+                            : 'Procesar Pallets con IA',
+                      ),
                     ),
                   ],
                 ),
@@ -227,24 +252,36 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
                   stream: firebaseService.watchPalletPlan(widget.orderId),
                   builder: (context, planSnapshot) {
                     if (planSnapshot.hasError) {
-                      return Text('Error leyendo pallet plan: ${planSnapshot.error}');
+                      return Text(
+                        'Error leyendo pallet plan: ${planSnapshot.error}',
+                      );
                     }
                     if (!planSnapshot.hasData || !planSnapshot.data!.exists) {
-                      return const Text('Aun no hay resultado para esta orden.');
+                      return const Text(
+                        'Aun no hay resultado para esta orden.',
+                      );
                     }
 
-                    final plan = planSnapshot.data!.data() ?? <String, dynamic>{};
-                    final stats = (plan['stats'] as Map<String, dynamic>?) ?? {};
-                    final pallet = (plan['pallet'] as Map<String, dynamic>?) ?? {};
+                    final plan =
+                        planSnapshot.data!.data() ?? <String, dynamic>{};
+                    final stats =
+                        (plan['stats'] as Map<String, dynamic>?) ?? {};
+                    final pallet =
+                        (plan['pallet'] as Map<String, dynamic>?) ?? {};
                     final boxes = (plan['boxes'] as List<dynamic>? ?? [])
                         .map((e) => Map<String, dynamic>.from(e as Map))
                         .toList();
                     final rawPallets = (plan['pallets'] as List<dynamic>? ?? [])
                         .map((e) => Map<String, dynamic>.from(e as Map))
                         .toList();
-                    final packingLog = (plan['packingLog'] as List<dynamic>? ?? [])
-                        .map((e) => e.toString())
-                        .toList();
+                    final packingLog =
+                        (plan['packingLog'] as List<dynamic>? ?? [])
+                            .map((e) => e.toString())
+                            .toList();
+                    final aiReview =
+                        (plan['aiReview'] as Map<String, dynamic>?) ?? {};
+                    final aiFinalAnswer =
+                        aiReview['finalAnswer']?.toString() ?? '';
 
                     final palletsToRender = rawPallets.isNotEmpty
                         ? rawPallets
@@ -253,7 +290,7 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
                               'palletNo': 1,
                               'layout': plan['layout'] ?? [],
                               'stats': stats,
-                            }
+                            },
                           ];
 
                     return Column(
@@ -270,16 +307,62 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text('Cantidad de pallets: ${plan['palletCount'] ?? palletsToRender.length}'),
-                                Text('Peso total (kg): ${stats['totalWeightKg'] ?? '-'}'),
-                                Text('Volumen usado (in3): ${stats['usedVolumeCm3'] ?? '-'}'),
-                                Text('Utilizacion (%): ${stats['utilizationPct'] ?? '-'}'),
-                                Text('No empacadas: ${stats['unpackedCount'] ?? '-'}'),
-                                Text('Pallet: ${pallet['lengthCm']}x${pallet['widthCm']}x${pallet['maxHeightCm']} in'),
+                                Text(
+                                  'Cantidad de pallets: ${plan['palletCount'] ?? palletsToRender.length}',
+                                ),
+                                Text(
+                                  'Peso total (kg): ${stats['totalWeightKg'] ?? '-'}',
+                                ),
+                                Text(
+                                  'Volumen usado (in3): ${stats['usedVolumeCm3'] ?? '-'}',
+                                ),
+                                Text(
+                                  'Utilizacion (%): ${stats['utilizationPct'] ?? '-'}',
+                                ),
+                                Text(
+                                  'No empacadas: ${stats['unpackedCount'] ?? '-'}',
+                                ),
+                                Text(
+                                  'Pallet: ${pallet['lengthCm']}x${pallet['widthCm']}x${pallet['maxHeightCm']} in',
+                                ),
                               ],
                             ),
                           ),
                         ),
+                        if (aiReview.isNotEmpty) ...[
+                          const SizedBox(height: 12),
+                          Card(
+                            color: Colors.white,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10),
+                              side: const BorderSide(color: Colors.black12),
+                            ),
+                            child: Padding(
+                              padding: const EdgeInsets.all(12),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text(
+                                    'Plan final IA del pallet',
+                                    style: TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    'Riesgo: ${aiReview['riskLevel'] ?? '-'}',
+                                  ),
+                                  if (aiFinalAnswer.isNotEmpty)
+                                    Padding(
+                                      padding: const EdgeInsets.only(top: 4),
+                                      child: Text(aiFinalAnswer),
+                                    ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ],
                         if (packingLog.isNotEmpty) ...[
                           const SizedBox(height: 12),
                           Card(
@@ -295,10 +378,15 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
                                 children: [
                                   const Text(
                                     'Log de acomodo',
-                                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                                    style: TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.bold,
+                                    ),
                                   ),
                                   const SizedBox(height: 8),
-                                  ...packingLog.take(18).map((line) => Text('- $line')),
+                                  ...packingLog
+                                      .take(18)
+                                      .map((line) => Text('- $line')),
                                 ],
                               ),
                             ),
@@ -306,18 +394,31 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
                         ],
                         const SizedBox(height: 12),
                         ...palletsToRender.map((palletView) {
-                          final palletStats = (palletView['stats'] as Map<String, dynamic>? ?? {});
-                          final layout = (palletView['layout'] as List<dynamic>? ?? [])
-                              .map((e) => Map<String, dynamic>.from(e as Map))
-                              .toList();
-                          final packingSummary = (palletView['packingSummary'] as Map<String, dynamic>?) ?? {};
-                          final layers = (packingSummary['layers'] as List<dynamic>? ?? [])
-                              .map((e) => Map<String, dynamic>.from(e as Map))
-                              .toList();
-                          final notes = (packingSummary['notes'] as List<dynamic>? ?? [])
-                              .map((e) => e.toString())
-                              .toList();
-                          final palletNo = palletView['palletNo']?.toString() ?? '?';
+                          final palletStats =
+                              (palletView['stats'] as Map<String, dynamic>? ??
+                              {});
+                          final layout =
+                              (palletView['layout'] as List<dynamic>? ?? [])
+                                  .map(
+                                    (e) => Map<String, dynamic>.from(e as Map),
+                                  )
+                                  .toList();
+                          final packingSummary =
+                              (palletView['packingSummary']
+                                  as Map<String, dynamic>?) ??
+                              {};
+                          final layers =
+                              (packingSummary['layers'] as List<dynamic>? ?? [])
+                                  .map(
+                                    (e) => Map<String, dynamic>.from(e as Map),
+                                  )
+                                  .toList();
+                          final notes =
+                              (packingSummary['notes'] as List<dynamic>? ?? [])
+                                  .map((e) => e.toString())
+                                  .toList();
+                          final palletNo =
+                              palletView['palletNo']?.toString() ?? '?';
 
                           return Card(
                             margin: const EdgeInsets.only(bottom: 16),
@@ -328,17 +429,28 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
                                 children: [
                                   Text(
                                     'Pallet $palletNo',
-                                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                                    style: const TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.bold,
+                                    ),
                                   ),
                                   const SizedBox(height: 6),
-                                  Text('Peso pallet (kg): ${palletStats['totalWeightKg'] ?? '-'}'),
-                                  Text('Volumen pallet (in3): ${palletStats['usedVolumeCm3'] ?? '-'}'),
-                                  Text('Utilizacion pallet (%): ${palletStats['utilizationPct'] ?? '-'}'),
+                                  Text(
+                                    'Peso pallet (kg): ${palletStats['totalWeightKg'] ?? '-'}',
+                                  ),
+                                  Text(
+                                    'Volumen pallet (in3): ${palletStats['usedVolumeCm3'] ?? '-'}',
+                                  ),
+                                  Text(
+                                    'Utilizacion pallet (%): ${palletStats['utilizationPct'] ?? '-'}',
+                                  ),
                                   if (layers.isNotEmpty) ...[
                                     const SizedBox(height: 8),
                                     const Text(
                                       'Resumen por capas',
-                                      style: TextStyle(fontWeight: FontWeight.bold),
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                      ),
                                     ),
                                     const SizedBox(height: 4),
                                     ...layers.map(
@@ -352,9 +464,17 @@ class _OrderDetailPageState extends State<OrderDetailPage> {
                                     ...notes.map((note) => Text('- $note')),
                                   ],
                                   const SizedBox(height: 8),
-                                  PalletFourViews(layout: layout, boxes: boxes, pallet: pallet),
+                                  PalletFourViews(
+                                    layout: layout,
+                                    boxes: boxes,
+                                    pallet: pallet,
+                                  ),
                                   const SizedBox(height: 12),
-                                  Pallet3DViewer(layout: layout, boxes: boxes, pallet: pallet),
+                                  Pallet3DViewer(
+                                    layout: layout,
+                                    boxes: boxes,
+                                    pallet: pallet,
+                                  ),
                                 ],
                               ),
                             ),

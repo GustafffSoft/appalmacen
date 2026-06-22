@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 
@@ -14,206 +14,142 @@ class ScanInvoicePage extends StatefulWidget {
 }
 
 class _ScanInvoicePageState extends State<ScanInvoicePage> {
-  final _invoiceNumberController = TextEditingController();
-  final _invoiceDateController = TextEditingController();
-  final _storeNumberController = TextEditingController();
-  final _storeNameController = TextEditingController();
-  final _addressController = TextEditingController();
-  final _pageCountController = TextEditingController(text: '1');
-
-  final List<_InvoiceItemForm> _items = [_InvoiceItemForm()];
-  final List<XFile> _pageFiles = [];
-  List<String> _ocrRawLines = const [];
-  List<String> _ocrTexts = const [];
-
-  bool _saving = false;
+  final _invoiceFiles = <XFile>[];
+  final _results = <_ScannedInvoiceResult>[];
+  _ScanMode _mode = _ScanMode.multipleInvoices;
   bool _scanning = false;
-  bool _showOcrDebug = false;
+  int _scannedCount = 0;
   String? _message;
 
-  @override
-  void dispose() {
-    _invoiceNumberController.dispose();
-    _invoiceDateController.dispose();
-    _storeNumberController.dispose();
-    _storeNameController.dispose();
-    _addressController.dispose();
-    _pageCountController.dispose();
-    for (final item in _items) {
-      item.dispose();
-    }
-    super.dispose();
-  }
-
-  Future<void> _pickInvoiceDate() async {
-    final initial = DateTime.tryParse(_invoiceDateController.text.trim()) ?? DateTime.now();
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: initial,
-      firstDate: DateTime(2024),
-      lastDate: DateTime(2035),
+  Future<void> _addInvoiceFromCamera() async {
+    final file = await ImagePicker().pickImage(
+      source: ImageSource.camera,
+      imageQuality: 85,
     );
-    if (picked == null) return;
+    if (file == null) return;
     setState(() {
-      _invoiceDateController.text = picked.toIso8601String().split('T').first;
+      _invoiceFiles.add(file);
+      _results.clear();
+      _message = '${_invoiceFiles.length} invoice(s) listos para escanear.';
     });
   }
 
-  Future<void> _pickPagesFromGallery() async {
+  Future<void> _pickInvoicesFromGallery() async {
     final files = await ImagePicker().pickMultiImage(imageQuality: 85);
     if (files.isEmpty) return;
     setState(() {
-      _pageFiles
+      _invoiceFiles
         ..clear()
         ..addAll(files);
-      _pageCountController.text = _pageFiles.length.toString();
-      _ocrRawLines = const [];
-      _ocrTexts = const [];
-      _message = 'Se cargaron ${_pageFiles.length} paginas del invoice.';
+      _results.clear();
+      _message = '${_invoiceFiles.length} invoice(s) listos para escanear.';
     });
   }
 
-  Future<void> _addPageFromCamera() async {
-    final file = await ImagePicker().pickImage(source: ImageSource.camera, imageQuality: 85);
-    if (file == null) return;
+  void _clearAll() {
     setState(() {
-      _pageFiles.add(file);
-      _pageCountController.text = _pageFiles.length.toString();
-      _ocrRawLines = const [];
-      _ocrTexts = const [];
-      _message = 'Se agrego la pagina ${_pageFiles.length} desde camara.';
+      _invoiceFiles.clear();
+      _results.clear();
+      _message = null;
+      _scannedCount = 0;
     });
   }
 
-  void _removePage(int index) {
-    setState(() {
-      _pageFiles.removeAt(index);
-      _pageCountController.text = _pageFiles.isEmpty ? '1' : _pageFiles.length.toString();
-      _ocrRawLines = const [];
-      _ocrTexts = const [];
-    });
-  }
-
-  void _addLine() {
-    setState(() {
-      _items.add(_InvoiceItemForm());
-    });
-  }
-
-  void _removeLine(int index) {
-    if (_items.length == 1) return;
-    setState(() {
-      _items[index].dispose();
-      _items.removeAt(index);
-    });
-  }
-
-  void _replaceItems(List<dynamic> items) {
-    for (final item in _items) {
-      item.dispose();
-    }
-    _items.clear();
-    for (final raw in items) {
-      final map = Map<String, dynamic>.from(raw as Map);
-      _items.add(
-        _InvoiceItemForm(
-          skuValue: map['sku']?.toString() ?? '',
-          descriptionValue: map['description']?.toString() ?? '',
-          qtyValue: (map['qty'] ?? 1).toString(),
-        ),
-      );
-    }
-    if (_items.isEmpty) {
-      _items.add(_InvoiceItemForm());
-    }
-  }
-
-  void _changeQty(int index, int delta) {
-    final current = int.tryParse(_items[index].qty.text.trim()) ?? 1;
-    final next = (current + delta).clamp(1, 999);
-    setState(() {
-      _items[index].qty.text = next.toString();
-    });
-  }
-
-  Future<void> _autoDetectFromPages() async {
-    final invoiceNumber = _invoiceNumberController.text.trim();
-    if (invoiceNumber.isEmpty) {
+  Future<void> _scanInvoices() async {
+    if (_invoiceFiles.isEmpty) {
       setState(() {
-        _message = 'Escribe primero el numero de invoice para poder subir las paginas.';
+        _message = 'Toma una foto o carga imagenes de invoices primero.';
       });
       return;
     }
-    if (_pageFiles.isEmpty) {
-      setState(() {
-        _message = 'Carga al menos una pagina del invoice antes de autodetectar.';
-      });
-      return;
-    }
+
+    final firebaseService = context.read<FirebaseService>();
+    final orderService = context.read<OrderService>();
+    final batchId = DateTime.now().millisecondsSinceEpoch;
 
     setState(() {
       _scanning = true;
-      _message = 'Subiendo paginas y ejecutando OCR...';
+      _results.clear();
+      _scannedCount = 0;
+      _message = 'Escaneando ${_invoiceFiles.length} invoice(s)...';
     });
 
     try {
-      final uploadedPages = await context.read<FirebaseService>().uploadInvoicePages(
-            invoiceNumber: invoiceNumber,
-            files: _pageFiles,
-          );
-
-      final response = await context.read<OrderService>().scanInvoicePages(
-            payload: {
-              'invoiceNumber': invoiceNumber,
-              'pages': List.generate(
-                uploadedPages.length,
-                (index) => {
-                  'pageNo': index + 1,
-                  'imagePath': uploadedPages[index]['imagePath'],
-                  'imageUrl': uploadedPages[index]['imageUrl'],
-                },
-              ),
-            },
-          );
-
-      final ocrAvailable = response['ocrAvailable'] == true;
-      final isComplete = response['isComplete'] == true;
-      final suggested = Map<String, dynamic>.from(response['suggestedInvoice'] as Map? ?? {});
-      final rawLines = (suggested['rawLines'] as List<dynamic>? ?? []).map((line) => line.toString()).toList();
-      final extractedTexts = (response['extractedTexts'] as List<dynamic>? ?? []).map((line) => line.toString()).toList();
-
-      if (ocrAvailable && suggested.isNotEmpty) {
+      if (_mode == _ScanMode.singleInvoiceMultiplePages) {
+        final uploadId = 'MULTIPAGE-$batchId';
+        final uploadedPages = await firebaseService.uploadInvoicePages(
+          invoiceNumber: uploadId,
+          files: _invoiceFiles,
+        );
+        final response = await orderService.scanInvoicePages(
+          payload: {
+            'pages': List.generate(
+              uploadedPages.length,
+              (index) => {
+                'pageNo': index + 1,
+                'imagePath': uploadedPages[index]['imagePath'],
+                'imageUrl': uploadedPages[index]['imageUrl'],
+              },
+            ),
+          },
+        );
+        final suggested = Map<String, dynamic>.from(
+          response['suggestedInvoice'] as Map? ?? {},
+        );
+        if (!mounted) return;
         setState(() {
-          if ((suggested['invoiceNumber']?.toString() ?? '').isNotEmpty) {
-            _invoiceNumberController.text = suggested['invoiceNumber'].toString();
-          }
-          if ((suggested['invoiceDate']?.toString() ?? '').isNotEmpty) {
-            _invoiceDateController.text = suggested['invoiceDate'].toString();
-          }
-          _storeNumberController.text = suggested['storeNumber']?.toString() ?? _storeNumberController.text;
-          _storeNameController.text = suggested['storeName']?.toString() ?? _storeNameController.text;
-          _addressController.text = suggested['address']?.toString() ?? _addressController.text;
-          _ocrRawLines = rawLines;
-          _ocrTexts = extractedTexts;
-          final parsedItems = (suggested['items'] as List<dynamic>? ?? []);
-          _replaceItems(parsedItems);
-          final backendMessage = response['message']?.toString() ?? 'Autodeteccion completada.';
-          final statusSuffix = isComplete
-              ? ' Invoice listo para confirmar.'
-              : ' Revisa tienda, SKU y cantidades antes de registrar.';
-          _message = '$backendMessage$statusSuffix';
+          _results.add(
+            _ScannedInvoiceResult(
+              pageIndex: 1,
+              response: response,
+              invoice: suggested,
+              uploadedPages: uploadedPages,
+            ),
+          );
+          _scannedCount = _invoiceFiles.length;
+          _message = 'Invoice de varias paginas escaneado.';
         });
-      } else {
+        return;
+      }
+
+      for (var index = 0; index < _invoiceFiles.length; index++) {
+        final uploadId = 'BATCH-$batchId-${index + 1}';
+        final uploadedPages = await firebaseService.uploadInvoicePages(
+          invoiceNumber: uploadId,
+          files: [_invoiceFiles[index]],
+        );
+        final response = await orderService.scanInvoicePages(
+          payload: {
+            'pages': [
+              {
+                'pageNo': 1,
+                'imagePath': uploadedPages.first['imagePath'],
+                'imageUrl': uploadedPages.first['imageUrl'],
+              },
+            ],
+          },
+        );
+        final suggested = Map<String, dynamic>.from(
+          response['suggestedInvoice'] as Map? ?? {},
+        );
+        final result = _ScannedInvoiceResult(
+          pageIndex: index + 1,
+          response: response,
+          invoice: suggested,
+          uploadedPages: uploadedPages,
+        );
+        if (!mounted) return;
         setState(() {
-          _ocrRawLines = rawLines;
-          _ocrTexts = extractedTexts;
-          _message = response['message']?.toString() ?? 'No se pudo autodetectar el invoice.';
+          _results.add(result);
+          _scannedCount = index + 1;
+          _message =
+              'Escaneados $_scannedCount de ${_invoiceFiles.length} invoice(s).';
         });
       }
     } catch (error) {
       if (!mounted) return;
       setState(() {
-        _message = 'Error autodetectando invoice: $error';
+        _message = 'Error escaneando invoices: $error';
       });
     } finally {
       if (mounted) {
@@ -224,405 +160,324 @@ class _ScanInvoicePageState extends State<ScanInvoicePage> {
     }
   }
 
-  Future<void> _submit() async {
-    final invoiceNumber = _invoiceNumberController.text.trim();
-    if (invoiceNumber.isEmpty) {
-      setState(() {
-        _message = 'Invoice number es obligatorio.';
-      });
-      return;
-    }
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
 
-    final items = <Map<String, dynamic>>[];
-    for (final item in _items) {
-      final sku = item.sku.text.trim();
-      final description = item.description.text.trim();
-      final qty = int.tryParse(item.qty.text.trim());
-      if (sku.isEmpty && description.isEmpty) {
-        continue;
-      }
-      if (sku.isEmpty || description.isEmpty || qty == null || qty <= 0) {
-        setState(() {
-          _message = 'Cada linea debe tener SKU, descripcion y cantidad valida.';
-        });
-        return;
-      }
-      items.add({
-        'sku': sku,
-        'description': description,
-        'qty': qty,
-        'rate': 0.0,
-        'amount': 0.0,
-      });
-    }
-
-    if (items.isEmpty) {
-      setState(() {
-        _message = 'Debes agregar al menos una linea del invoice.';
-      });
-      return;
-    }
-
-    setState(() {
-      _saving = true;
-      _message = _pageFiles.isEmpty
-          ? 'Registrando invoice y sincronizando orden...'
-          : 'Subiendo paginas del invoice y sincronizando orden...';
-    });
-
-    try {
-      final uploadedPages = _pageFiles.isEmpty
-          ? <Map<String, String>>[]
-          : await context.read<FirebaseService>().uploadInvoicePages(
-                invoiceNumber: invoiceNumber,
-                files: _pageFiles,
-              );
-
-      final effectiveInvoiceDate = _invoiceDateController.text.trim().isEmpty
-          ? DateTime.now().toIso8601String().split('T').first
-          : _invoiceDateController.text.trim();
-
-      final payload = {
-        'invoiceNumber': invoiceNumber,
-        'invoiceDate': effectiveInvoiceDate,
-        'storeNumber': _storeNumberController.text.trim(),
-        'storeName': _storeNameController.text.trim(),
-        'address': _addressController.text.trim(),
-        'subtotal': 0.0,
-        'tax': 0.0,
-        'total': 0.0,
-        'pageCount': _pageFiles.isEmpty ? (int.tryParse(_pageCountController.text.trim()) ?? 1) : uploadedPages.length,
-        'pages': List.generate(
-          _pageFiles.isEmpty ? (int.tryParse(_pageCountController.text.trim()) ?? 1) : uploadedPages.length,
-          (index) => {
-            'pageNo': index + 1,
-            'imagePath': uploadedPages.isNotEmpty ? uploadedPages[index]['imagePath'] : null,
-            'imageUrl': uploadedPages.isNotEmpty ? uploadedPages[index]['imageUrl'] : null,
-          },
-        ),
-        'items': items,
-        'sourceMode': uploadedPages.isEmpty ? 'manual_review' : 'manual_review_with_images',
-      };
-
-      final response = await context.read<OrderService>().registerInvoice(payload: payload);
-      if (!mounted) return;
-      final orderId = response['orderId']?.toString();
-      if (orderId == null || orderId.isEmpty) {
-        throw Exception('No se recibio orderId del backend');
-      }
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (_) => OrderDetailPage(orderId: orderId)),
-      );
-    } catch (error) {
-      if (!mounted) return;
-      setState(() {
-        _message = 'Error registrando invoice: $error';
-      });
-    } finally {
-      if (mounted) {
-        setState(() {
-          _saving = false;
-        });
-      }
-    }
-  }
-
-  Widget _buildInvoiceSummary() {
-    return Card(
-      margin: const EdgeInsets.only(bottom: 16),
-      child: Padding(
+    return Scaffold(
+      appBar: AppBar(title: const Text('Escanear Invoices')),
+      body: ListView(
         padding: const EdgeInsets.all(16),
+        children: [
+          SegmentedButton<_ScanMode>(
+            segments: const [
+              ButtonSegment(
+                value: _ScanMode.multipleInvoices,
+                icon: Icon(Icons.receipt_long),
+                label: Text('Varios invoices'),
+              ),
+              ButtonSegment(
+                value: _ScanMode.singleInvoiceMultiplePages,
+                icon: Icon(Icons.layers_outlined),
+                label: Text('Un invoice'),
+              ),
+            ],
+            selected: {_mode},
+            onSelectionChanged: _scanning
+                ? null
+                : (selection) {
+                    setState(() {
+                      _mode = selection.first;
+                      _results.clear();
+                      _message = null;
+                    });
+                  },
+          ),
+          const SizedBox(height: 12),
+          _PhotoActions(
+            invoiceCount: _invoiceFiles.length,
+            mode: _mode,
+            scanning: _scanning,
+            onCamera: _addInvoiceFromCamera,
+            onGallery: _pickInvoicesFromGallery,
+            onClear: _invoiceFiles.isEmpty ? null : _clearAll,
+          ),
+          const SizedBox(height: 12),
+          FilledButton.icon(
+            onPressed: _scanning || _invoiceFiles.isEmpty
+                ? null
+                : _scanInvoices,
+            icon: _scanning
+                ? const SizedBox.square(
+                    dimension: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.document_scanner),
+            label: Text(
+              _scanning
+                  ? 'Escaneando $_scannedCount/${_invoiceFiles.length}'
+                  : _mode == _ScanMode.multipleInvoices
+                  ? 'Escanear invoices'
+                  : 'Escanear invoice',
+            ),
+          ),
+          if (_message != null) ...[
+            const SizedBox(height: 12),
+            _MessageBanner(message: _message!),
+          ],
+          if (_results.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            Text('Resultados', style: theme.textTheme.titleMedium),
+            const SizedBox(height: 8),
+            for (final result in _results) _InvoiceResultCard(result: result),
+          ] else ...[
+            const SizedBox(height: 28),
+            Icon(
+              Icons.receipt_long_outlined,
+              size: 64,
+              color: theme.colorScheme.primary,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              _mode == _ScanMode.multipleInvoices
+                  ? 'Cada foto se procesa como un invoice distinto.'
+                  : 'Todas las fotos se procesan como paginas del mismo invoice.',
+              textAlign: TextAlign.center,
+              style: theme.textTheme.bodyLarge,
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+enum _ScanMode { multipleInvoices, singleInvoiceMultiplePages }
+
+class _ScannedInvoiceResult {
+  _ScannedInvoiceResult({
+    required this.pageIndex,
+    required this.response,
+    required this.invoice,
+    required this.uploadedPages,
+  });
+
+  final int pageIndex;
+  final Map<String, dynamic> response;
+  final Map<String, dynamic> invoice;
+  final List<Map<String, String>> uploadedPages;
+  bool saving = false;
+
+  List<dynamic> get items => invoice['items'] as List<dynamic>? ?? const [];
+
+  Set<String> get newProductSkus =>
+      (invoice['newProductsDetected'] as List<dynamic>? ??
+              invoice['newProductsCreated'] as List<dynamic>? ??
+              const [])
+          .map((sku) => sku.toString().trim())
+          .where((sku) => sku.isNotEmpty)
+          .toSet();
+}
+
+class _PhotoActions extends StatelessWidget {
+  const _PhotoActions({
+    required this.invoiceCount,
+    required this.mode,
+    required this.scanning,
+    required this.onCamera,
+    required this.onGallery,
+    required this.onClear,
+  });
+
+  final int invoiceCount;
+  final _ScanMode mode;
+  final bool scanning;
+  final VoidCallback onCamera;
+  final VoidCallback onGallery;
+  final VoidCallback? onClear;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(12),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              'Resumen del invoice',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 12),
             Row(
               children: [
-                Expanded(
-                  child: TextField(
-                    controller: _invoiceNumberController,
-                    decoration: const InputDecoration(labelText: 'Numero de invoice'),
-                  ),
-                ),
+                const Icon(Icons.photo_camera),
                 const SizedBox(width: 8),
                 Expanded(
-                  child: TextField(
-                    controller: _invoiceDateController,
-                    readOnly: true,
-                    onTap: _pickInvoiceDate,
-                    decoration: const InputDecoration(
-                      labelText: 'Fecha de invoice',
-                      suffixIcon: Icon(Icons.calendar_month_outlined),
-                    ),
+                  child: Text(
+                    mode == _ScanMode.multipleInvoices
+                        ? '$invoiceCount invoice(s) seleccionados'
+                        : '$invoiceCount pagina(s) seleccionadas',
                   ),
                 ),
+                if (onClear != null)
+                  IconButton(
+                    tooltip: 'Limpiar imagenes',
+                    onPressed: scanning ? null : onClear,
+                    icon: const Icon(Icons.delete_outline),
+                  ),
               ],
             ),
             const SizedBox(height: 8),
-            Row(
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
               children: [
-                Expanded(
-                  child: TextField(
-                    controller: _storeNumberController,
-                    decoration: const InputDecoration(labelText: 'Numero de tienda'),
-                  ),
+                OutlinedButton.icon(
+                  onPressed: scanning ? null : onCamera,
+                  icon: const Icon(Icons.camera_alt),
+                  label: const Text('Tomar foto'),
                 ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: TextField(
-                    controller: _storeNameController,
-                    decoration: const InputDecoration(labelText: 'Nombre de tienda'),
-                  ),
+                OutlinedButton.icon(
+                  onPressed: scanning ? null : onGallery,
+                  icon: const Icon(Icons.photo_library),
+                  label: const Text('Cargar imagenes'),
                 ),
               ],
-            ),
-            const SizedBox(height: 8),
-            TextField(
-              controller: _addressController,
-              decoration: const InputDecoration(labelText: 'Direccion'),
             ),
           ],
         ),
       ),
     );
   }
+}
 
-  Widget _buildDetectedItemsReview() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            const Text(
-              'Revision de productos',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-            ),
-            const Spacer(),
-            OutlinedButton.icon(
-              onPressed: _saving || _scanning ? null : _addLine,
-              icon: const Icon(Icons.add),
-              label: const Text('Agregar linea'),
-            ),
-          ],
-        ),
-        const SizedBox(height: 8),
-        ..._items.asMap().entries.map((entry) {
-          final index = entry.key;
-          final item = entry.value;
-          return Card(
-            margin: const EdgeInsets.only(bottom: 10),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          item.sku.text.trim().isEmpty ? 'Linea ${index + 1}' : item.sku.text.trim(),
-                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-                        ),
-                      ),
-                      IconButton(
-                        visualDensity: VisualDensity.compact,
-                        padding: EdgeInsets.zero,
-                        constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-                        onPressed: _saving || _scanning ? null : () => _removeLine(index),
-                        icon: const Icon(Icons.delete_outline),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 6),
-                  TextField(
-                    controller: item.sku,
-                    decoration: const InputDecoration(labelText: 'SKU', isDense: true),
-                  ),
-                  const SizedBox(height: 6),
-                  TextField(
-                    controller: item.description,
-                    minLines: 2,
-                    maxLines: 2,
-                    decoration: const InputDecoration(labelText: 'Descripcion', isDense: true),
-                  ),
-                  const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      const Text('Cantidad', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
-                      const Spacer(),
-                      IconButton(
-                        visualDensity: VisualDensity.compact,
-                        padding: EdgeInsets.zero,
-                        constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-                        onPressed: _saving || _scanning ? null : () => _changeQty(index, -1),
-                        icon: const Icon(Icons.remove_circle_outline),
-                      ),
-                      SizedBox(
-                        width: 64,
-                        child: TextField(
-                          controller: item.qty,
-                          textAlign: TextAlign.center,
-                          keyboardType: TextInputType.number,
-                          decoration: const InputDecoration(labelText: 'Qty', isDense: true),
-                        ),
-                      ),
-                      IconButton(
-                        visualDensity: VisualDensity.compact,
-                        padding: EdgeInsets.zero,
-                        constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-                        onPressed: _saving || _scanning ? null : () => _changeQty(index, 1),
-                        icon: const Icon(Icons.add_circle_outline),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          );
-        }),
-      ],
-    );
-  }
+class _InvoiceResultCard extends StatefulWidget {
+  const _InvoiceResultCard({required this.result});
 
-  Widget _buildOcrDebug() {
-    if (_ocrRawLines.isEmpty && _ocrTexts.isEmpty) {
-      return const SizedBox.shrink();
+  final _ScannedInvoiceResult result;
+
+  @override
+  State<_InvoiceResultCard> createState() => _InvoiceResultCardState();
+}
+
+class _InvoiceResultCardState extends State<_InvoiceResultCard> {
+  Future<void> _createOrder() async {
+    final result = widget.result;
+    final invoiceNumber = result.invoice['invoiceNumber']?.toString().trim();
+    if (invoiceNumber == null ||
+        invoiceNumber.isEmpty ||
+        result.items.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Este invoice necesita revision manual.')),
+      );
+      return;
     }
 
-    return ExpansionTile(
-      initiallyExpanded: _showOcrDebug,
-      onExpansionChanged: (value) => setState(() => _showOcrDebug = value),
-      title: const Text('Depuracion OCR'),
-      children: [
-        if (_ocrRawLines.isNotEmpty)
-          ExpansionTile(
-            title: const Text('Lineas detectadas'),
-            children: _ocrRawLines
-                .map(
-                  (line) => ListTile(
-                    dense: true,
-                    title: Text(line, style: const TextStyle(fontSize: 12)),
-                  ),
-                )
-                .toList(),
+    setState(() => result.saving = true);
+    try {
+      final today = DateTime.now().toIso8601String().split('T').first;
+      final invoiceDate =
+          result.invoice['invoiceDate']?.toString().trim().isNotEmpty == true
+          ? result.invoice['invoiceDate'].toString().trim()
+          : today;
+      final response = await context.read<OrderService>().registerInvoice(
+        payload: {
+          'invoiceNumber': invoiceNumber,
+          'invoiceDate': invoiceDate,
+          'storeNumber': result.invoice['storeNumber']?.toString() ?? '',
+          'storeName': result.invoice['storeName']?.toString() ?? '',
+          'address': result.invoice['address']?.toString() ?? '',
+          'subtotal': _toDouble(result.invoice['subtotal']),
+          'tax': _toDouble(result.invoice['tax']),
+          'total': _toDouble(result.invoice['total']),
+          'pageCount': result.uploadedPages.length,
+          'sourceMode': 'ai_batch_scan_review',
+          'pages': List.generate(
+            result.uploadedPages.length,
+            (index) => {
+              'pageNo': index + 1,
+              'imagePath': result.uploadedPages[index]['imagePath'],
+              'imageUrl': result.uploadedPages[index]['imageUrl'],
+            },
           ),
-        if (_ocrTexts.isNotEmpty)
-          ExpansionTile(
-            title: const Text('Texto OCR por pagina'),
-            children: _ocrTexts.asMap().entries.map((entry) {
-              return ListTile(
-                title: Text('Pagina ${entry.key + 1}'),
-                subtitle: SelectableText(entry.value, style: const TextStyle(fontSize: 12)),
-              );
-            }).toList(),
-          ),
-      ],
-    );
+          'items': result.items.map((raw) {
+            final item = Map<String, dynamic>.from(raw as Map);
+            return {
+              'sku': item['sku']?.toString() ?? '',
+              'description': item['description']?.toString() ?? '',
+              'qty': _toInt(item['qty'], fallback: 1),
+              'rate': _toDouble(item['rate']),
+              'amount': _toDouble(item['amount']),
+              'category': item['category']?.toString() ?? 'General',
+              'unitsPerCase': _toInt(item['unitsPerCase'], fallback: 1),
+              'alternateSkus': (item['alternateSkus'] as List<dynamic>? ?? [])
+                  .map((value) => value.toString())
+                  .toList(),
+            };
+          }).toList(),
+        },
+      );
+      final orderId = response['orderId']?.toString();
+      if (!mounted) return;
+      if (orderId == null || orderId.isEmpty) return;
+      Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => OrderDetailPage(orderId: orderId)),
+      );
+    } finally {
+      if (mounted) setState(() => result.saving = false);
+    }
+  }
+
+  static double _toDouble(dynamic value) {
+    if (value is num) return value.toDouble();
+    return double.tryParse(value?.toString() ?? '') ?? 0;
+  }
+
+  static int _toInt(dynamic value, {required int fallback}) {
+    if (value is num) return value.toInt();
+    return int.tryParse(value?.toString() ?? '') ?? fallback;
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Escanear / Registrar Invoice')),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
+    final result = widget.result;
+    final invoiceNumber =
+        result.invoice['invoiceNumber']?.toString().trim().isNotEmpty == true
+        ? result.invoice['invoiceNumber'].toString()
+        : 'No detectado';
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            if (_message != null)
-              Container(
-                width: double.infinity,
-                margin: const EdgeInsets.only(bottom: 12),
-                padding: const EdgeInsets.all(10),
-                color: Colors.black,
-                child: Text(_message!, style: const TextStyle(color: Colors.white)),
-              ),
-            const Text(
-              'Paginas del invoice',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            Text(
+              'Invoice ${result.pageIndex}: $invoiceNumber',
+              style: Theme.of(context).textTheme.titleMedium,
             ),
             const SizedBox(height: 8),
-            Row(
-              children: [
-                Expanded(
-                  child: FilledButton.icon(
-                    onPressed: _saving || _scanning ? null : _pickPagesFromGallery,
-                    icon: const Icon(Icons.photo_library_outlined),
-                    label: const Text('Cargar Paginas'),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: _saving || _scanning ? null : _addPageFromCamera,
-                    icon: const Icon(Icons.camera_alt_outlined),
-                    label: const Text('Agregar Camara'),
-                  ),
-                ),
-              ],
+            _SummaryRow(
+              label: 'Tienda',
+              value: result.invoice['storeName']?.toString() ?? '',
+            ),
+            _SummaryRow(
+              label: 'Productos',
+              value:
+                  '${result.items.length} detectados, ${result.newProductSkus.length} nuevos',
             ),
             const SizedBox(height: 8),
-            Row(
-              children: [
-                OutlinedButton.icon(
-                  onPressed: _saving || _scanning ? null : _autoDetectFromPages,
-                  icon: _scanning
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.auto_awesome_outlined),
-                  label: Text(_scanning ? 'Autodetectando...' : 'Autodetectar'),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: TextField(
-                    controller: _pageCountController,
-                    keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(labelText: 'Cantidad de paginas'),
-                  ),
-                ),
-              ],
+            _ProductsList(
+              items: result.items,
+              newProductSkus: result.newProductSkus,
             ),
-            if (_pageFiles.isNotEmpty) ...[
-              const SizedBox(height: 8),
-              ..._pageFiles.asMap().entries.map(
-                (entry) => ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  leading: const Icon(Icons.insert_drive_file_outlined),
-                  title: Text('Pagina ${entry.key + 1}'),
-                  subtitle: Text(entry.value.name),
-                  trailing: IconButton(
-                    onPressed: _saving || _scanning ? null : () => _removePage(entry.key),
-                    icon: const Icon(Icons.delete_outline),
-                  ),
-                ),
-              ),
-            ],
-            const SizedBox(height: 16),
-            _buildInvoiceSummary(),
-            _buildDetectedItemsReview(),
-            const SizedBox(height: 8),
-            _buildOcrDebug(),
-            const SizedBox(height: 16),
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton.icon(
-                onPressed: _saving || _scanning ? null : _submit,
-                icon: _saving
-                    ? const SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                      )
-                    : const Icon(Icons.check_circle_outline),
-                label: Text(_saving ? 'Confirmando invoice...' : 'Confirmar y Crear Orden'),
-              ),
+            const SizedBox(height: 12),
+            FilledButton.icon(
+              onPressed: result.saving ? null : _createOrder,
+              icon: result.saving
+                  ? const SizedBox.square(
+                      dimension: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.add_shopping_cart),
+              label: Text(result.saving ? 'Creando orden...' : 'Crear orden'),
             ),
           ],
         ),
@@ -631,23 +486,91 @@ class _ScanInvoicePageState extends State<ScanInvoicePage> {
   }
 }
 
-class _InvoiceItemForm {
-  _InvoiceItemForm({
-    String skuValue = '',
-    String descriptionValue = '',
-    String qtyValue = '1',
-  })  : sku = TextEditingController(text: skuValue),
-        description = TextEditingController(text: descriptionValue),
-        qty = TextEditingController(text: qtyValue);
+class _MessageBanner extends StatelessWidget {
+  const _MessageBanner({required this.message});
 
-  final TextEditingController sku;
-  final TextEditingController description;
-  final TextEditingController qty;
+  final String message;
 
-  void dispose() {
-    sku.dispose();
-    description.dispose();
-    qty.dispose();
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: colors.primaryContainer,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Text(message, style: TextStyle(color: colors.onPrimaryContainer)),
+    );
   }
 }
 
+class _SummaryRow extends StatelessWidget {
+  const _SummaryRow({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    final cleanValue = value.trim().isEmpty ? '-' : value.trim();
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 84,
+            child: Text(
+              label,
+              style: const TextStyle(fontWeight: FontWeight.w700),
+            ),
+          ),
+          Expanded(child: Text(cleanValue)),
+        ],
+      ),
+    );
+  }
+}
+
+class _ProductsList extends StatelessWidget {
+  const _ProductsList({required this.items, required this.newProductSkus});
+
+  final List<dynamic> items;
+  final Set<String> newProductSkus;
+
+  @override
+  Widget build(BuildContext context) {
+    if (items.isEmpty) {
+      return const Text('No se detectaron productos.');
+    }
+    return Column(
+      children: [
+        for (final raw in items)
+          _ProductTile(
+            item: Map<String, dynamic>.from(raw as Map),
+            isNew: newProductSkus.contains(raw['sku']?.toString().trim()),
+          ),
+      ],
+    );
+  }
+}
+
+class _ProductTile extends StatelessWidget {
+  const _ProductTile({required this.item, required this.isNew});
+
+  final Map<String, dynamic> item;
+  final bool isNew;
+
+  @override
+  Widget build(BuildContext context) {
+    final sku = item['sku']?.toString() ?? '';
+    final description = item['description']?.toString() ?? '';
+    final qty = item['qty']?.toString() ?? '1';
+    return ListTile(
+      contentPadding: EdgeInsets.zero,
+      title: Text(description.isEmpty ? sku : description),
+      subtitle: Text('SKU: $sku | Qty: $qty'),
+      trailing: Text(isNew ? 'Nuevo' : 'Existente'),
+    );
+  }
+}

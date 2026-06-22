@@ -7,7 +7,7 @@ import 'firebase_service.dart';
 
 class OrderService {
   OrderService(this._firebaseService, {http.Client? client})
-      : _client = client ?? http.Client();
+    : _client = client ?? http.Client();
 
   final FirebaseService _firebaseService;
   final http.Client _client;
@@ -30,9 +30,29 @@ class OrderService {
     );
 
     if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw Exception('No se pudo escanear invoice: ${response.statusCode} ${response.body}');
+      throw Exception(
+        'No se pudo escanear invoice: ${response.statusCode} ${response.body}',
+      );
     }
 
+    return jsonDecode(response.body) as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> scanProductCatalog({
+    required Map<String, dynamic> payload,
+  }) async {
+    final uri = Uri.parse('$backendBaseUrl/api/v1/products/scan-catalog');
+    final response = await _client.post(
+      uri,
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode(payload),
+    );
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw Exception(
+        'No se pudieron escanear productos: '
+        '${response.statusCode} ${response.body}',
+      );
+    }
     return jsonDecode(response.body) as Map<String, dynamic>;
   }
 
@@ -47,7 +67,9 @@ class OrderService {
     );
 
     if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw Exception('No se pudo registrar invoice: ${response.statusCode} ${response.body}');
+      throw Exception(
+        'No se pudo registrar invoice: ${response.statusCode} ${response.body}',
+      );
     }
 
     return jsonDecode(response.body) as Map<String, dynamic>;
@@ -57,7 +79,9 @@ class OrderService {
     final uri = Uri.parse('$backendBaseUrl/api/v1/products/seed');
     final response = await _client.post(uri);
     if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw Exception('No se pudo sembrar catalogo: ${response.statusCode} ${response.body}');
+      throw Exception(
+        'No se pudo sembrar catalogo: ${response.statusCode} ${response.body}',
+      );
     }
   }
 
@@ -71,12 +95,14 @@ class OrderService {
 
     final payload = <String, dynamic>{
       'allowOverhangCm': allowOverhangCm,
-      'pallet': pallet ?? {
-        'lengthCm': 48,
-        'widthCm': 40,
-        'maxHeightCm': 84,
-        'maxWeightKg': 900,
-      },
+      'pallet':
+          pallet ??
+          {
+            'lengthCm': 48,
+            'widthCm': 40,
+            'maxHeightCm': 84,
+            'maxWeightKg': 900,
+          },
     };
 
     final cleanImageUrl = imageUrl?.trim();
@@ -91,7 +117,9 @@ class OrderService {
     );
 
     if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw Exception('Backend error (${response.statusCode}): ${response.body}');
+      throw Exception(
+        'Backend error (${response.statusCode}): ${response.body}',
+      );
     }
 
     final body = jsonDecode(response.body) as Map<String, dynamic>;

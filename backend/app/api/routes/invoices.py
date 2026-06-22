@@ -7,8 +7,8 @@ router = APIRouter(prefix='/invoices', tags=['invoices'])
 
 
 @router.post('/scan-pages', response_model=ScanInvoicePagesResponse)
-def scan_invoice_pages_route(request: ScanInvoicePagesRequest) -> ScanInvoicePagesResponse:
-    return scan_invoice_pages(request)
+async def scan_invoice_pages_route(request: ScanInvoicePagesRequest) -> ScanInvoicePagesResponse:
+    return await scan_invoice_pages(request)
 
 
 @router.post('/register', response_model=RegisterInvoiceResponse)

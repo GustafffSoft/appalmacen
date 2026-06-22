@@ -107,7 +107,10 @@ class _Pallet3DViewerState extends State<Pallet3DViewer> {
     );
   }
 
-  List<_Cuboid> _buildCuboids(List<Map<String, dynamic>> layout, List<Map<String, dynamic>> boxes) {
+  List<_Cuboid> _buildCuboids(
+    List<Map<String, dynamic>> layout,
+    List<Map<String, dynamic>> boxes,
+  ) {
     final boxMetaByBaseId = <String, _BoxMeta>{};
     for (final box in boxes) {
       final baseId = box['boxId']?.toString() ?? '';
@@ -154,7 +157,10 @@ class _Pallet3DViewerState extends State<Pallet3DViewer> {
   }
 
   static Color _colorFromName(String input) {
-    final hash = input.codeUnits.fold<int>(0, (prev, c) => (prev * 31 + c) & 0x7fffffff);
+    final hash = input.codeUnits.fold<int>(
+      0,
+      (prev, c) => (prev * 31 + c) & 0x7fffffff,
+    );
     final hue = (hash % 360).toDouble();
     final hsl = HSLColor.fromAHSL(1, hue, 0.25, 0.78);
     return hsl.toColor();
@@ -257,7 +263,7 @@ class _Pallet3DPainter extends CustomPainter {
             path: path,
             depth: avgDepth,
             fill: _shadeColor(cuboid.color, shade),
-            stroke: Colors.black.withOpacity(0.65),
+            stroke: Colors.black.withValues(alpha: 0.65),
           ),
         );
       }
@@ -325,7 +331,7 @@ class _Pallet3DPainter extends CustomPainter {
 
     final p = proj.cast<_ProjectedPoint>();
     final wire = Paint()
-      ..color = Colors.black.withOpacity(0.5)
+      ..color = Colors.black.withValues(alpha: 0.5)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1.1;
 
@@ -348,8 +354,13 @@ class _Pallet3DPainter extends CustomPainter {
 
     final title = TextPainter(
       text: TextSpan(
-        text: 'Base ${palletLength.toStringAsFixed(0)}x${palletWidth.toStringAsFixed(0)} in  |  Max H ${palletHeight.toStringAsFixed(0)} in',
-        style: const TextStyle(fontSize: 11, color: Colors.black87, fontWeight: FontWeight.w600),
+        text:
+            'Base ${palletLength.toStringAsFixed(0)}x${palletWidth.toStringAsFixed(0)} in  |  Max H ${palletHeight.toStringAsFixed(0)} in',
+        style: const TextStyle(
+          fontSize: 11,
+          color: Colors.black87,
+          fontWeight: FontWeight.w600,
+        ),
       ),
       textDirection: TextDirection.ltr,
     )..layout(maxWidth: size.width - 16);
@@ -390,7 +401,12 @@ class _FaceToDraw {
 }
 
 class _BoxMeta {
-  _BoxMeta({required this.name, required this.l, required this.w, required this.h});
+  _BoxMeta({
+    required this.name,
+    required this.l,
+    required this.w,
+    required this.h,
+  });
   final String name;
   final double l;
   final double w;
@@ -420,15 +436,15 @@ class _Cuboid {
   ];
 
   List<_Vec3> get vertices => [
-        _Vec3(min.x, min.y, min.z),
-        _Vec3(max.x, min.y, min.z),
-        _Vec3(max.x, max.y, min.z),
-        _Vec3(min.x, max.y, min.z),
-        _Vec3(min.x, min.y, max.z),
-        _Vec3(max.x, min.y, max.z),
-        _Vec3(max.x, max.y, max.z),
-        _Vec3(min.x, max.y, max.z),
-      ];
+    _Vec3(min.x, min.y, min.z),
+    _Vec3(max.x, min.y, min.z),
+    _Vec3(max.x, max.y, min.z),
+    _Vec3(min.x, max.y, min.z),
+    _Vec3(min.x, min.y, max.z),
+    _Vec3(max.x, min.y, max.z),
+    _Vec3(max.x, max.y, max.z),
+    _Vec3(min.x, max.y, max.z),
+  ];
 }
 
 class _Vec3 {
@@ -442,11 +458,8 @@ class _Vec3 {
 
   double dot(_Vec3 o) => x * o.x + y * o.y + z * o.z;
 
-  _Vec3 cross(_Vec3 o) => _Vec3(
-        y * o.z - z * o.y,
-        z * o.x - x * o.z,
-        x * o.y - y * o.x,
-      );
+  _Vec3 cross(_Vec3 o) =>
+      _Vec3(y * o.z - z * o.y, z * o.x - x * o.z, x * o.y - y * o.x);
 
   double get length => math.sqrt(x * x + y * y + z * z);
 
@@ -456,5 +469,3 @@ class _Vec3 {
     return _Vec3(x / len, y / len, z / len);
   }
 }
-
-

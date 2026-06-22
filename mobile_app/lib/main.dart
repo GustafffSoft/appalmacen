@@ -4,18 +4,18 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import 'firebase_options.dart';
-import 'pages/home_page.dart';
+import 'pages/auth_gate_page.dart';
+import 'services/auth_service.dart';
 import 'services/firebase_service.dart';
+import 'services/ai_service.dart';
 import 'services/order_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await Firebase.initializeApp(
-    options: DefaultFirebaseOptions.currentPlatform,
-  );
-
-  if (FirebaseAuth.instance.currentUser == null) {
-    await FirebaseAuth.instance.signInAnonymously();
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  final currentUser = FirebaseAuth.instance.currentUser;
+  if (currentUser?.isAnonymous == true) {
+    await FirebaseAuth.instance.signOut();
   }
 
   runApp(const AppAlmacenApp());
@@ -45,7 +45,9 @@ class AppAlmacenApp extends StatelessWidget {
         style: FilledButton.styleFrom(
           backgroundColor: Colors.black,
           foregroundColor: Colors.white,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+          ),
           padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
         ),
       ),
@@ -53,7 +55,9 @@ class AppAlmacenApp extends StatelessWidget {
         style: OutlinedButton.styleFrom(
           foregroundColor: Colors.black,
           side: const BorderSide(color: Colors.black),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+          ),
           padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
         ),
       ),
@@ -71,16 +75,18 @@ class AppAlmacenApp extends StatelessWidget {
 
     return MultiProvider(
       providers: [
+        Provider<AiService>(create: (_) => AiService()),
+        Provider<AuthService>(create: (_) => AuthService()),
         Provider<FirebaseService>(create: (_) => FirebaseService()),
         ProxyProvider<FirebaseService, OrderService>(
-          update: (_, firebaseService, __) => OrderService(firebaseService),
+          update: (_, firebaseService, _) => OrderService(firebaseService),
         ),
       ],
       child: MaterialApp(
         title: 'appalmacen',
         debugShowCheckedModeBanner: false,
         theme: theme,
-        home: const HomePage(),
+        home: const AuthGatePage(),
       ),
     );
   }
