@@ -70,6 +70,27 @@ flutter run
 
 Para telefono fisico: `mobile_app/lib/config.dart` debe apuntar a tu IP LAN.
 
+## Ambientes y releases
+
+El proyecto separa desarrollo y produccion:
+
+- Firebase desarrollo: `appalmacen-5e987`
+- Firebase produccion: `appalmacen-prod-5e987`
+- Rama de integracion: `codex/develop`
+- Rama estable: `main`
+
+Los builds y el checklist de promocion estan documentados en
+[`docs/environments.md`](docs/environments.md).
+
+Build local de desarrollo:
+
+```powershell
+.\scripts\build_web_dev.ps1 -BackendUrl http://10.0.0.28:8000
+```
+
+El build de produccion exige una URL HTTPS de backend independiente y nunca
+usa silenciosamente el backend de desarrollo.
+
 ## API util para seed
 
 Con backend corriendo:

@@ -1,5 +1,6 @@
 ﻿from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 
@@ -36,16 +37,25 @@ def _init_firebase() -> None:
     if firebase_admin._apps:
         return
 
-    credentials_path = _resolve_credentials_path(
-        settings.google_application_credentials
-    )
-    if not credentials_path.exists():
-        raise RuntimeError(
-            f"Firebase credentials file not found at {credentials_path}. "
-            "Create backend/serviceAccountKey.json and set GOOGLE_APPLICATION_CREDENTIALS."
+    if settings.firebase_service_account_json:
+        try:
+            credential_payload = json.loads(settings.firebase_service_account_json)
+        except json.JSONDecodeError as error:
+            raise RuntimeError(
+                "FIREBASE_SERVICE_ACCOUNT_JSON is not valid JSON"
+            ) from error
+        cred = credentials.Certificate(credential_payload)
+    else:
+        credentials_path = _resolve_credentials_path(
+            settings.google_application_credentials
         )
-
-    cred = credentials.Certificate(str(credentials_path))
+        if not credentials_path.exists():
+            raise RuntimeError(
+                f"Firebase credentials file not found at {credentials_path}. "
+                "Set GOOGLE_APPLICATION_CREDENTIALS or "
+                "FIREBASE_SERVICE_ACCOUNT_JSON."
+            )
+        cred = credentials.Certificate(str(credentials_path))
     firebase_admin.initialize_app(
         cred,
         {

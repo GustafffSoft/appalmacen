@@ -1,0 +1,7 @@
+{
+  "projects": {
+    "default": "appalmacen-5e987",
+    "dev": "appalmacen-5e987",
+    "prod": "appalmacen-prod-5e987"
+  }
+}

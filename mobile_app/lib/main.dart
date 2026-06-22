@@ -3,7 +3,9 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import 'app_environment.dart';
 import 'firebase_options.dart';
+import 'firebase_options_prod.dart';
 import 'pages/auth_gate_page.dart';
 import 'services/auth_service.dart';
 import 'services/firebase_service.dart';
@@ -12,7 +14,11 @@ import 'services/order_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  await Firebase.initializeApp(
+    options: isProduction
+        ? ProductionFirebaseOptions.currentPlatform
+        : DefaultFirebaseOptions.currentPlatform,
+  );
   final currentUser = FirebaseAuth.instance.currentUser;
   if (currentUser?.isAnonymous == true) {
     await FirebaseAuth.instance.signOut();

@@ -1,6 +1,7 @@
 # Ignore sensitive backend files
 backend/.env
-backend/serviceAccountKey.json
+backend/.env.production
+backend/serviceAccountKey*.json
 backend/uploads/
 backend/logs/
 backend/.venv/
