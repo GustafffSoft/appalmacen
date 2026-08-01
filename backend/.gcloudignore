@@ -1,0 +1,13 @@
+.gcloudignore
+.git/
+.gitignore
+.venv*/
+__pycache__/
+*.py[cod]
+.env
+.env.*
+serviceAccountKey*.json
+uploads/
+logs/
+tests/
+*.log

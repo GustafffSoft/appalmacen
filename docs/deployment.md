@@ -31,6 +31,12 @@ The script enables the required APIs, creates the dedicated Cloud Run service
 account, grants only Firestore and Firebase Auth read access, creates the
 OpenAI secret and optionally adds its first value.
 
+To synchronize the existing local OpenAI key without printing it:
+
+```powershell
+.\scripts\sync_openai_secret_prod.ps1
+```
+
 Do not place service-account JSON or the OpenAI key in `.env.production`, the
 Docker image or the Git repository.
 
