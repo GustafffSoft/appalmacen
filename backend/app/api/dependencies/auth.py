@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import logging
 from typing import Annotated, Callable
 
 from fastapi import Depends, HTTPException, status
@@ -11,6 +12,7 @@ from app.core.config import get_settings
 from app.services.firebase_service import get_firestore_client
 
 bearer_scheme = HTTPBearer(auto_error=False)
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -35,6 +37,7 @@ def require_active_user(
         raise _authentication_error("Authentication is required.")
 
     settings = get_settings()
+    firestore_client = get_firestore_client()
     try:
         decoded = firebase_auth.verify_id_token(
             credentials.credentials,
@@ -50,6 +53,10 @@ def require_active_user(
             "The Firebase session is invalid or expired."
         ) from exc
     except Exception as exc:  # noqa: BLE001
+        logger.exception(
+            "Unexpected Firebase token verification failure (%s).",
+            type(exc).__name__,
+        )
         raise _authentication_error(
             "The Firebase session could not be verified."
         ) from exc
@@ -58,7 +65,7 @@ def require_active_user(
     if not uid:
         raise _authentication_error("The Firebase token has no user identifier.")
 
-    profile_snapshot = get_firestore_client().collection("users").document(uid).get()
+    profile_snapshot = firestore_client.collection("users").document(uid).get()
     profile = profile_snapshot.to_dict() if profile_snapshot.exists else None
     if not profile or profile.get("active") is not True:
         raise HTTPException(

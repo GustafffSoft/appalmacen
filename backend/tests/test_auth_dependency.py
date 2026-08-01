@@ -62,3 +62,32 @@ class AuthDependencyTests(TestCase):
             )
 
         self.assertEqual(raised.exception.status_code, 403)
+
+    @patch("app.api.dependencies.auth.get_firestore_client")
+    @patch("app.api.dependencies.auth.firebase_auth.verify_id_token")
+    def test_firebase_is_initialized_before_token_verification(
+        self, verify_token: Mock, get_db: Mock
+    ) -> None:
+        initialized = False
+        database = Mock()
+        snapshot = Mock(exists=True)
+        snapshot.to_dict.return_value = {"active": True, "role": "admin"}
+        database.collection.return_value.document.return_value.get.return_value = (
+            snapshot
+        )
+
+        def initialize_firebase() -> Mock:
+            nonlocal initialized
+            initialized = True
+            return database
+
+        def verify_initialized_token(*_args: object, **_kwargs: object) -> dict:
+            self.assertTrue(initialized)
+            return {"uid": "admin-1", "email": "admin@example.com"}
+
+        get_db.side_effect = initialize_firebase
+        verify_token.side_effect = verify_initialized_token
+
+        user = require_active_user(self._credentials())
+
+        self.assertEqual(user.role, "admin")
