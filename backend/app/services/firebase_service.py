@@ -45,17 +45,21 @@ def _init_firebase() -> None:
                 "FIREBASE_SERVICE_ACCOUNT_JSON is not valid JSON"
             ) from error
         cred = credentials.Certificate(credential_payload)
-    else:
+    elif settings.google_application_credentials:
         credentials_path = _resolve_credentials_path(
             settings.google_application_credentials
         )
         if not credentials_path.exists():
             raise RuntimeError(
                 f"Firebase credentials file not found at {credentials_path}. "
-                "Set GOOGLE_APPLICATION_CREDENTIALS or "
-                "FIREBASE_SERVICE_ACCOUNT_JSON."
+                "Set GOOGLE_APPLICATION_CREDENTIALS to a valid file or use "
+                "Application Default Credentials."
             )
         cred = credentials.Certificate(str(credentials_path))
+    else:
+        # Cloud Run supplies Application Default Credentials through its
+        # service identity, so no private key file is needed in production.
+        cred = credentials.ApplicationDefault()
     firebase_admin.initialize_app(
         cred,
         {

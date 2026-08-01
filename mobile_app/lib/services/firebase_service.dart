@@ -99,7 +99,6 @@ class FirebaseService {
     required String category,
     required double cost,
     required double salePrice,
-    required int stockQty,
     required int unitsPerCase,
     required String productStatus,
     required double lengthIn,
@@ -122,7 +121,7 @@ class FirebaseService {
       'category': category,
       'cost': cost,
       'salePrice': salePrice,
-      'stockQty': stockQty,
+      'stockQty': 0,
       'unitsPerCase': unitsPerCase,
       'productStatus': productStatus,
       'lengthCm': lengthIn,
@@ -174,7 +173,6 @@ class FirebaseService {
     required String category,
     required double cost,
     required double salePrice,
-    required int stockQty,
     required int unitsPerCase,
     required String productStatus,
     required double lengthIn,
@@ -189,7 +187,6 @@ class FirebaseService {
       'category': category,
       'cost': cost,
       'salePrice': salePrice,
-      'stockQty': stockQty,
       'unitsPerCase': unitsPerCase,
       'productStatus': productStatus,
       'lengthCm': lengthIn,
@@ -298,18 +295,17 @@ class FirebaseService {
   }) async {
     final palletId = 'PAL-${DateTime.now().millisecondsSinceEpoch}';
     final filePath = 'warehouse_pallets/$palletId/original.jpg';
-    final ref = _storage.ref(filePath);
-    await _uploadXFile(ref, photo, contentType: 'image/jpeg');
-    final photoUrl = await _getDownloadUrlWithRetry(ref);
-
-    await _firestore.collection('warehouse_pallets').doc(palletId).set({
+    final palletRef = _firestore.collection('warehouse_pallets').doc(palletId);
+    final batch = _firestore.batch();
+    batch.set(palletRef, {
       'palletId': palletId,
       'sku': sku,
       'productName': productName,
       'boxes': boxes,
       'photoPath': filePath,
-      'photoUrl': photoUrl,
-      'photoUrls': [photoUrl],
+      'photoUrl': '',
+      'photoUrls': <String>[],
+      'photoUploadStatus': 'pending',
       'palletName': 'Pallet $sku',
       'rackId': '',
       'level': 0,
@@ -319,47 +315,94 @@ class FirebaseService {
       'createdAt': FieldValue.serverTimestamp(),
       'updatedAt': FieldValue.serverTimestamp(),
     }, SetOptions(merge: true));
-    await _firestore.collection('products').doc(sku).set({
+    batch.set(_firestore.collection('products').doc(sku), {
       'stockQty': FieldValue.increment(boxes),
       'updatedAt': FieldValue.serverTimestamp(),
     }, SetOptions(merge: true));
+    await batch.commit().timeout(const Duration(seconds: 20));
+
+    unawaited(
+      _uploadWarehousePalletPhoto(
+        palletId: palletId,
+        filePath: filePath,
+        photo: photo,
+      ),
+    );
 
     return palletId;
+  }
+
+  Future<void> _uploadWarehousePalletPhoto({
+    required String palletId,
+    required String filePath,
+    required XFile photo,
+  }) async {
+    final palletRef = _firestore.collection('warehouse_pallets').doc(palletId);
+    final ref = _storage.ref(filePath);
+    try {
+      await _uploadXFile(ref, photo, contentType: 'image/jpeg');
+      final photoUrl = await _getDownloadUrlWithRetry(ref);
+      await palletRef.set({
+        'photoUrl': photoUrl,
+        'photoUrls': FieldValue.arrayUnion([photoUrl]),
+        'photoUploadStatus': 'complete',
+        'photoUploadError': null,
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+    } catch (error) {
+      await palletRef.set({
+        'photoUploadStatus': 'failed',
+        'photoUploadError': error.toString(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+    }
   }
 
   Future<void> updateWarehousePalletDetails({
     required String palletId,
     required String palletName,
-    required int boxes,
   }) async {
-    if (boxes < 0) throw Exception('La cantidad no puede ser negativa.');
     final palletRef = _firestore.collection('warehouse_pallets').doc(palletId);
-    await _firestore.runTransaction((transaction) async {
+    await palletRef.set({
+      'palletName': palletName.trim(),
+      'updatedAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
+  }
+
+  Future<int> depleteWarehousePallet(String palletId) async {
+    final palletRef = _firestore.collection('warehouse_pallets').doc(palletId);
+    return _firestore.runTransaction((transaction) async {
       final palletSnapshot = await transaction.get(palletRef);
       if (!palletSnapshot.exists) throw Exception('El pallet no existe.');
       final data = palletSnapshot.data()!;
+      final boxes = (data['boxes'] as num?)?.toInt() ?? 0;
       final sku = data['sku']?.toString() ?? '';
-      final oldBoxes = (data['boxes'] as num?)?.toInt() ?? 0;
+      if (boxes <= 0 || sku.isEmpty) return 0;
+
       final productRef = _firestore.collection('products').doc(sku);
       final productSnapshot = await transaction.get(productRef);
       final currentStock =
           (productSnapshot.data()?['stockQty'] as num?)?.toInt() ?? 0;
-      final nextStock = (currentStock + boxes - oldBoxes).clamp(0, 1 << 31);
       transaction.set(productRef, {
-        'stockQty': nextStock,
+        'stockQty': (currentStock - boxes).clamp(0, 1 << 31),
         'updatedAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
-      final hasLocation = (data['locationCode']?.toString() ?? '').isNotEmpty;
       transaction.set(palletRef, {
-        'palletName': palletName.trim(),
-        'boxes': boxes,
-        'status': boxes == 0
-            ? 'agotado'
-            : hasLocation
-            ? 'ubicado'
-            : 'sin_ubicacion',
+        'previousBoxes': boxes,
+        'boxes': 0,
+        'previousRackId': data['rackId'] ?? '',
+        'previousLevel': data['level'] ?? 0,
+        'previousPosition': data['position'] ?? '',
+        'previousLocationCode': data['locationCode'] ?? '',
+        'rackId': '',
+        'level': 0,
+        'position': '',
+        'locationCode': '',
+        'status': 'agotado',
+        'depletedAt': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
+      return boxes;
     });
   }
 
@@ -401,10 +444,12 @@ class FirebaseService {
     required String name,
     required int levels,
     required int positionsPerLevel,
+    required int rackNumber,
   }) async {
     await _firestore.collection('warehouse_racks').doc(rackId).set({
       'rackId': rackId,
       'name': name,
+      'rackNumber': rackNumber,
       'levels': levels,
       'positionsPerLevel': positionsPerLevel,
       'updatedAt': FieldValue.serverTimestamp(),
@@ -585,7 +630,7 @@ class FirebaseService {
 
     for (var attempt = 1; attempt <= 3; attempt++) {
       try {
-        return await ref.getDownloadURL();
+        return await ref.getDownloadURL().timeout(const Duration(seconds: 15));
       } on FirebaseException catch (error) {
         lastError = error;
         if (error.code != 'object-not-found' || attempt == 3) {
@@ -606,11 +651,13 @@ class FirebaseService {
     final metadata = SettableMetadata(contentType: contentType);
     if (kIsWeb) {
       final bytes = await file.readAsBytes();
-      await ref.putData(bytes, metadata);
+      await ref.putData(bytes, metadata).timeout(const Duration(seconds: 45));
       return;
     }
 
-    await ref.putFile(File(file.path), metadata);
+    await ref
+        .putFile(File(file.path), metadata)
+        .timeout(const Duration(seconds: 45));
   }
 
   Future<List<Map<String, String>>> uploadInvoicePages({

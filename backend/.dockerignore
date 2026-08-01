@@ -1,7 +1,12 @@
-.venv/
+.venv*/
 __pycache__/
-*.pyc
-.env
-serviceAccountKey.json
+*.py[cod]
+.env*
+!.env.production.example
+serviceAccountKey*.json
 uploads/
 logs/
+tests/
+*.log
+.git/
+.gitignore

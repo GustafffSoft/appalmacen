@@ -20,7 +20,6 @@ class _AddProductPageState extends State<AddProductPage> {
   late final TextEditingController _categoryController;
   late final TextEditingController _costController;
   late final TextEditingController _salePriceController;
-  late final TextEditingController _stockQtyController;
   late final TextEditingController _unitsPerCaseController;
   late final TextEditingController _lengthController;
   late final TextEditingController _widthController;
@@ -55,9 +54,6 @@ class _AddProductPageState extends State<AddProductPage> {
     _salePriceController = TextEditingController(
       text: product['salePrice']?.toString() ?? '0',
     );
-    _stockQtyController = TextEditingController(
-      text: product['stockQty']?.toString() ?? '0',
-    );
     _unitsPerCaseController = TextEditingController(
       text: product['unitsPerCase']?.toString() ?? '1',
     );
@@ -84,7 +80,6 @@ class _AddProductPageState extends State<AddProductPage> {
     _categoryController.dispose();
     _costController.dispose();
     _salePriceController.dispose();
-    _stockQtyController.dispose();
     _unitsPerCaseController.dispose();
     _lengthController.dispose();
     _widthController.dispose();
@@ -110,7 +105,6 @@ class _AddProductPageState extends State<AddProductPage> {
       );
       final cost = double.tryParse(_costController.text.trim()) ?? 0;
       final salePrice = double.tryParse(_salePriceController.text.trim()) ?? 0;
-      final stockQty = int.parse(_stockQtyController.text.trim());
       final unitsPerCase = int.parse(_unitsPerCaseController.text.trim());
 
       if (_isEditing) {
@@ -123,7 +117,6 @@ class _AddProductPageState extends State<AddProductPage> {
           category: _categoryController.text.trim(),
           cost: cost,
           salePrice: salePrice,
-          stockQty: stockQty,
           unitsPerCase: unitsPerCase,
           productStatus: _productStatus,
           lengthIn: double.parse(_lengthController.text.trim()),
@@ -141,7 +134,6 @@ class _AddProductPageState extends State<AddProductPage> {
           category: _categoryController.text.trim(),
           cost: cost,
           salePrice: salePrice,
-          stockQty: stockQty,
           unitsPerCase: unitsPerCase,
           productStatus: _productStatus,
           lengthIn: double.parse(_lengthController.text.trim()),
@@ -218,17 +210,6 @@ class _AddProductPageState extends State<AddProductPage> {
     final number = double.tryParse(raw);
     if (number == null || number < 0) {
       return 'Ingresa un numero valido';
-    }
-    return null;
-  }
-
-  String? _requiredWholeNumber(String? value) {
-    if (value == null || value.trim().isEmpty) {
-      return 'Campo requerido';
-    }
-    final number = int.tryParse(value.trim());
-    if (number == null || number < 0) {
-      return 'Ingresa un numero entero valido';
     }
     return null;
   }
@@ -590,30 +571,35 @@ class _AddProductPageState extends State<AddProductPage> {
                     ],
                   ),
                   const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: TextFormField(
-                          controller: _stockQtyController,
-                          validator: _requiredWholeNumber,
-                          keyboardType: TextInputType.number,
-                          decoration: const InputDecoration(
-                            labelText: 'Stock cajas',
+                  TextFormField(
+                    controller: _unitsPerCaseController,
+                    validator: _requiredPositiveWholeNumber,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(
+                      labelText: 'Unid. por caja',
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF3F6FA),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.black12),
+                    ),
+                    child: const Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(Icons.inventory_2_outlined, size: 20),
+                        SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'La existencia no se edita aqui. La cantidad entra solamente desde Mapa de Racks al crear un pallet.',
                           ),
                         ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: TextFormField(
-                          controller: _unitsPerCaseController,
-                          validator: _requiredPositiveWholeNumber,
-                          keyboardType: TextInputType.number,
-                          decoration: const InputDecoration(
-                            labelText: 'Unid. por caja',
-                          ),
-                        ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                   const SizedBox(height: 12),
                   DropdownButtonFormField<String>(

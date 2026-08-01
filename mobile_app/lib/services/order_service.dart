@@ -3,14 +3,18 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 import '../config.dart';
+import 'backend_api_client.dart';
 import 'firebase_service.dart';
 
 class OrderService {
-  OrderService(this._firebaseService, {http.Client? client})
-    : _client = client ?? http.Client();
+  OrderService(
+    this._firebaseService, {
+    http.Client? client,
+    BackendApiClient? apiClient,
+  }) : _apiClient = apiClient ?? BackendApiClient(client: client);
 
   final FirebaseService _firebaseService;
-  final http.Client _client;
+  final BackendApiClient _apiClient;
 
   Future<String> createOrder({
     required List<Map<String, dynamic>> items,
@@ -23,11 +27,7 @@ class OrderService {
     required Map<String, dynamic> payload,
   }) async {
     final uri = Uri.parse('$backendBaseUrl/api/v1/invoices/scan-pages');
-    final response = await _client.post(
-      uri,
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode(payload),
-    );
+    final response = await _apiClient.postJson(uri, payload: payload);
 
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw Exception(
@@ -42,11 +42,7 @@ class OrderService {
     required Map<String, dynamic> payload,
   }) async {
     final uri = Uri.parse('$backendBaseUrl/api/v1/products/scan-catalog');
-    final response = await _client.post(
-      uri,
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode(payload),
-    );
+    final response = await _apiClient.postJson(uri, payload: payload);
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw Exception(
         'No se pudieron escanear productos: '
@@ -60,11 +56,7 @@ class OrderService {
     required Map<String, dynamic> payload,
   }) async {
     final uri = Uri.parse('$backendBaseUrl/api/v1/invoices/register');
-    final response = await _client.post(
-      uri,
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode(payload),
-    );
+    final response = await _apiClient.postJson(uri, payload: payload);
 
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw Exception(
@@ -77,7 +69,7 @@ class OrderService {
 
   Future<void> seedProductsCatalog() async {
     final uri = Uri.parse('$backendBaseUrl/api/v1/products/seed');
-    final response = await _client.post(uri);
+    final response = await _apiClient.postJson(uri);
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw Exception(
         'No se pudo sembrar catalogo: ${response.statusCode} ${response.body}',
@@ -110,11 +102,7 @@ class OrderService {
       payload['imageUrl'] = cleanImageUrl;
     }
 
-    final response = await _client.post(
-      uri,
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode(payload),
-    );
+    final response = await _apiClient.postJson(uri, payload: payload);
 
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw Exception(

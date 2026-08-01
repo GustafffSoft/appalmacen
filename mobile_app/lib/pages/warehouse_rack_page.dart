@@ -17,6 +17,42 @@ const _twoPositions = [
   _RackPosition('A', 'Atras'),
 ];
 
+int _rackNumberFromIdOrName(Map<String, dynamic> rack, int fallback) {
+  final values = [
+    rack['rackNumber'],
+    rack['rackId'],
+    rack['name'],
+  ].map((value) => value?.toString() ?? '');
+  for (final value in values) {
+    final match = RegExp(r'(\d+)').firstMatch(value);
+    final number = int.tryParse(match?.group(1) ?? '');
+    if (number != null && number > 0) return number;
+  }
+  return fallback;
+}
+
+String _rackDisplayName(Map<String, dynamic> rack, int rackNumber) {
+  final name = rack['name']?.toString().trim() ?? '';
+  if (name.isNotEmpty &&
+      !RegExp(r'^Rack\s+[A-Z]+$', caseSensitive: false).hasMatch(name)) {
+    return name;
+  }
+  return 'Rack $rackNumber';
+}
+
+int _positionNumber(List<_RackPosition> positions, _RackPosition position) {
+  final index = positions.indexWhere((item) => item.code == position.code);
+  return index < 0 ? 1 : index + 1;
+}
+
+String _positionDisplayCode(
+  int rackNumber,
+  List<_RackPosition> positions,
+  _RackPosition position,
+) {
+  return '$rackNumber.${_positionNumber(positions, position)}';
+}
+
 List<int> _levelsForRack(Map<String, dynamic> rack) {
   final raw = rack['levels'];
   final levels = raw is num ? raw.toInt() : int.tryParse(raw?.toString() ?? '');
@@ -31,7 +67,14 @@ List<_RackPosition> _positionsForRack(Map<String, dynamic> rack) {
 }
 
 class WarehouseRackPage extends StatefulWidget {
-  const WarehouseRackPage({super.key});
+  const WarehouseRackPage({
+    super.key,
+    this.embedded = false,
+    this.onMoveModeChanged,
+  });
+
+  final bool embedded;
+  final ValueChanged<bool>? onMoveModeChanged;
 
   @override
   State<WarehouseRackPage> createState() => _WarehouseRackPageState();
@@ -40,35 +83,24 @@ class WarehouseRackPage extends StatefulWidget {
 class _WarehouseRackPageState extends State<WarehouseRackPage> {
   String _query = '';
   List<Map<String, dynamic>> _currentRacks = [];
+  Map<String, dynamic>? _selectedPalletToMove;
 
   int _toInt(dynamic value) {
     if (value is num) return value.toInt();
     return int.tryParse(value?.toString() ?? '') ?? 0;
   }
 
-  String _rackLabelFromIndex(int index) {
-    var value = index + 1;
-    final chars = <String>[];
-    while (value > 0) {
-      value--;
-      chars.insert(0, String.fromCharCode(65 + (value % 26)));
-      value ~/= 26;
+  int _nextRackNumber(List<Map<String, dynamic>> racks) {
+    final usedNumbers = <int>{};
+    for (var index = 0; index < racks.length; index++) {
+      usedNumbers.add(_rackNumberFromIdOrName(racks[index], index + 1));
     }
-    return chars.join();
-  }
-
-  String _nextRackLabel(List<Map<String, dynamic>> racks) {
-    final usedIds = racks
-        .map((rack) => rack['rackId']?.toString().toUpperCase() ?? '')
-        .where((id) => id.isNotEmpty)
-        .toSet();
-    var index = 0;
+    var number = usedNumbers.isEmpty
+        ? 1
+        : usedNumbers.reduce((a, b) => a > b ? a : b) + 1;
     while (true) {
-      final label = _rackLabelFromIndex(index);
-      if (!usedIds.contains('RACK-$label')) {
-        return label;
-      }
-      index++;
+      if (!usedNumbers.contains(number)) return number;
+      number++;
     }
   }
 
@@ -77,12 +109,14 @@ class _WarehouseRackPageState extends State<WarehouseRackPage> {
     Map<String, dynamic>? rack,
   }) async {
     final isEditing = rack != null;
-    final autoLabel = _nextRackLabel(_currentRacks);
+    final autoNumber = _nextRackNumber(_currentRacks);
     final rackId = isEditing
         ? rack['rackId']?.toString() ?? ''
-        : 'RACK-$autoLabel';
+        : 'RACK-$autoNumber';
     final nameController = TextEditingController(
-      text: isEditing ? rack['name']?.toString() ?? rackId : 'Rack $autoLabel',
+      text: isEditing
+          ? rack['name']?.toString() ?? 'Rack $autoNumber'
+          : 'Rack $autoNumber',
     );
     var levels = isEditing ? _toInt(rack['levels']) : 1;
     if (levels < 1) levels = 1;
@@ -102,14 +136,21 @@ class _WarehouseRackPageState extends State<WarehouseRackPage> {
                   children: [
                     TextField(
                       controller: nameController,
-                      textCapitalization: TextCapitalization.characters,
+                      readOnly: !isEditing,
+                      enableInteractiveSelection: isEditing,
+                      textCapitalization: isEditing
+                          ? TextCapitalization.characters
+                          : TextCapitalization.none,
                       decoration: InputDecoration(
                         labelText: isEditing
                             ? 'Nombre visible del rack'
                             : 'Nombre automatico',
                         helperText: isEditing
                             ? 'Puedes cambiar el nombre sin perder ubicaciones.'
-                            : 'El sistema asigna letras automaticamente.',
+                            : 'El sistema asigna numeros automaticamente.',
+                        prefixIcon: isEditing
+                            ? const Icon(Icons.edit_outlined)
+                            : const Icon(Icons.tag_outlined),
                       ),
                     ),
                     const SizedBox(height: 12),
@@ -167,6 +208,9 @@ class _WarehouseRackPageState extends State<WarehouseRackPage> {
                       name: name,
                       levels: levels,
                       positionsPerLevel: positionsPerLevel,
+                      rackNumber: isEditing
+                          ? _rackNumberFromIdOrName(rack, autoNumber)
+                          : autoNumber,
                     );
                     if (dialogContext.mounted) {
                       Navigator.of(dialogContext).pop();
@@ -384,7 +428,9 @@ class _WarehouseRackPageState extends State<WarehouseRackPage> {
                           if (source == null) return;
                           final file = await ImagePicker().pickImage(
                             source: source,
-                            imageQuality: 80,
+                            imageQuality: 60,
+                            maxWidth: 1600,
+                            maxHeight: 1600,
                           );
                           if (file != null) {
                             setDialogState(() => selectedPhoto = file);
@@ -431,16 +477,36 @@ class _WarehouseRackPageState extends State<WarehouseRackPage> {
                           final productName =
                               selectedProduct!['name']?.toString() ??
                               'Producto';
-                          await context
-                              .read<FirebaseService>()
-                              .createWarehousePalletEntry(
-                                sku: selectedSku,
-                                productName: productName,
-                                boxes: qty,
-                                photo: selectedPhoto!,
+                          try {
+                            await context
+                                .read<FirebaseService>()
+                                .createWarehousePalletEntry(
+                                  sku: selectedSku,
+                                  productName: productName,
+                                  boxes: qty,
+                                  photo: selectedPhoto!,
+                                );
+                            if (dialogContext.mounted) {
+                              Navigator.of(dialogContext).pop();
+                            }
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text(
+                                    'Pallet creado. La foto seguira subiendo en segundo plano.',
+                                  ),
+                                ),
                               );
-                          if (dialogContext.mounted) {
-                            Navigator.of(dialogContext).pop();
+                            }
+                          } catch (error) {
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text('Error creando pallet: $error'),
+                                ),
+                              );
+                            }
+                            setDialogState(() => saving = false);
                           }
                         },
                   child: Text(saving ? 'Guardando...' : 'Guardar pallet'),
@@ -514,15 +580,34 @@ class _WarehouseRackPageState extends State<WarehouseRackPage> {
 
   bool _rackHasQueryMatch(
     Map<String, dynamic> rack,
+    int rackNumber,
     Map<String, List<Map<String, dynamic>>> placedByLocation,
     String query,
   ) {
     if (query.isEmpty) return true;
     final rackId = rack['rackId']?.toString() ?? '';
+    final rackName = _rackDisplayName(rack, rackNumber);
+    final rackValues = [
+      rackId,
+      rackName,
+      'rack $rackNumber',
+    ].map((value) => value.toLowerCase()).join(' ');
+    if (rackValues.contains(query)) return true;
     final levels = _levelsForRack(rack);
     final positions = _positionsForRack(rack);
     for (final level in levels) {
       for (final position in positions) {
+        final positionCode = _positionDisplayCode(
+          rackNumber,
+          positions,
+          position,
+        );
+        final visibleLocation = [
+          positionCode,
+          position.label,
+          '$rackName piso $level $positionCode',
+        ].map((value) => value.toLowerCase()).join(' ');
+        if (visibleLocation.contains(query)) return true;
         final locationCode = '$rackId-L$level-${position.code}';
         final pallets = placedByLocation[locationCode] ?? [];
         if (pallets.any((pallet) => _palletMatchesQuery(pallet, query))) {
@@ -533,7 +618,7 @@ class _WarehouseRackPageState extends State<WarehouseRackPage> {
     return false;
   }
 
-  Future<void> _placePallet(
+  Future<bool> _placePallet(
     BuildContext context, {
     required Map<String, dynamic> pallet,
     required String rackId,
@@ -564,7 +649,7 @@ class _WarehouseRackPageState extends State<WarehouseRackPage> {
           ],
         ),
       );
-      if (isEmpty == null || !context.mounted) return;
+      if (isEmpty == null || !context.mounted) return false;
       if (isEmpty) {
         consumed = await firebaseService.consumeFirstFloorLocation(
           rackId: rackId,
@@ -592,6 +677,7 @@ class _WarehouseRackPageState extends State<WarehouseRackPage> {
         ),
       );
     }
+    return true;
   }
 
   Future<void> _clearPalletLocation(
@@ -610,79 +696,236 @@ class _WarehouseRackPageState extends State<WarehouseRackPage> {
     }
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final firebaseService = context.read<FirebaseService>();
+  void _selectPalletToMove(Map<String, dynamic> pallet) {
+    final enteringMoveMode = _selectedPalletToMove == null;
+    debugPrint(
+      '[RackMove] Selected pallet=${pallet['palletId'] ?? pallet['sku'] ?? ''} '
+      'entering=$enteringMoveMode embedded=${widget.embedded}',
+    );
+    setState(() => _selectedPalletToMove = pallet);
+    if (enteringMoveMode) {
+      widget.onMoveModeChanged?.call(true);
+    }
+    final name = pallet['productName']?.toString() ?? 'pallet';
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Pallet seleccionado: $name. Toca una posicion destino.'),
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Mapa de Racks'),
+  void _clearSelectedPallet() {
+    if (_selectedPalletToMove == null) return;
+    debugPrint('[RackMove] Leaving move mode');
+    setState(() => _selectedPalletToMove = null);
+    widget.onMoveModeChanged?.call(false);
+  }
+
+  Future<void> _movePalletOutside(
+    BuildContext context,
+    Map<String, dynamic> pallet,
+  ) async {
+    await _clearPalletLocation(context, pallet);
+    if (mounted) _clearSelectedPallet();
+  }
+
+  Future<void> _depletePallet(
+    BuildContext context,
+    Map<String, dynamic> pallet,
+  ) async {
+    final palletId = pallet['palletId']?.toString() ?? '';
+    final boxes = _toInt(pallet['boxes']);
+    if (palletId.isEmpty || boxes <= 0) return;
+    final name =
+        pallet['palletName']?.toString() ?? 'Pallet ${pallet['sku'] ?? ''}';
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Dar de baja pallet'),
+        content: Text(
+          'Este pallet esta vacio?\n\n'
+          'Se descontaran $boxes cajas del inventario y el pallet quedara como agotado.\n\n'
+          '$name',
+        ),
         actions: [
-          IconButton(
-            tooltip: 'Agregar rack',
-            onPressed: () => _showRackDialog(context),
-            icon: const Icon(Icons.add),
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Dar de baja'),
           ),
         ],
       ),
-      body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-        stream: firebaseService.watchProducts(),
-        builder: (context, productSnapshot) {
-          return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-            stream: firebaseService.watchWarehousePallets(),
-            builder: (context, palletSnapshot) {
-              return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-                stream: firebaseService.watchWarehouseRacks(),
-                builder: (context, rackSnapshot) {
-                  if (productSnapshot.hasError ||
-                      palletSnapshot.hasError ||
-                      rackSnapshot.hasError) {
-                    return Center(
-                      child: Text(
-                        'Error cargando mapa: ${productSnapshot.error ?? palletSnapshot.error ?? rackSnapshot.error}',
-                      ),
-                    );
-                  }
-                  if (!productSnapshot.hasData ||
-                      !palletSnapshot.hasData ||
-                      !rackSnapshot.hasData) {
-                    return const Center(child: CircularProgressIndicator());
-                  }
+    );
+    if (confirmed != true || !context.mounted) return;
+    try {
+      final deducted = await context
+          .read<FirebaseService>()
+          .depleteWarehousePallet(palletId);
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            deducted > 0
+                ? '$deducted cajas descontadas. Pallet agotado.'
+                : 'El pallet ya no tenia cantidad disponible.',
+          ),
+        ),
+      );
+    } catch (error) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Error: $error')));
+    }
+  }
 
-                  final racks = rackSnapshot.data!.docs
-                      .map((doc) => {'rackId': doc.id, ...doc.data()})
-                      .toList();
-                  _currentRacks = racks;
-                  final palletDocs = palletSnapshot.data!.docs;
-                  final placedByLocation = _placedByLocation(palletDocs);
-                  final filteredRacks = racks
-                      .where(
-                        (rack) =>
-                            _rackHasQueryMatch(rack, placedByLocation, _query),
+  @override
+  Widget build(BuildContext context) {
+    final body = _buildRackBody(context);
+    if (widget.embedded) {
+      if (_selectedPalletToMove != null) return body;
+      return Column(
+        children: [
+          Material(
+            color: Theme.of(context).colorScheme.surface,
+            child: ListTile(
+              leading: const Icon(Icons.view_module_outlined),
+              title: const Text('Mapa de Racks'),
+              subtitle: const Text('Entrada y ubicacion de pallets'),
+              trailing: IconButton(
+                tooltip: 'Agregar rack',
+                onPressed: () => _showRackDialog(context),
+                icon: const Icon(Icons.add),
+              ),
+            ),
+          ),
+          const Divider(height: 1),
+          Expanded(child: body),
+        ],
+      );
+    }
+
+    return Scaffold(
+      appBar: _selectedPalletToMove == null
+          ? AppBar(
+              title: const Text('Mapa de Racks'),
+              actions: [
+                IconButton(
+                  tooltip: 'Agregar rack',
+                  onPressed: () => _showRackDialog(context),
+                  icon: const Icon(Icons.add),
+                ),
+              ],
+            )
+          : null,
+      body: _selectedPalletToMove == null ? body : SafeArea(child: body),
+    );
+  }
+
+  Widget _buildRackBody(BuildContext context) {
+    final firebaseService = context.read<FirebaseService>();
+
+    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      stream: firebaseService.watchProducts(),
+      builder: (context, productSnapshot) {
+        return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+          stream: firebaseService.watchWarehousePallets(),
+          builder: (context, palletSnapshot) {
+            return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+              stream: firebaseService.watchWarehouseRacks(),
+              builder: (context, rackSnapshot) {
+                if (productSnapshot.hasError ||
+                    palletSnapshot.hasError ||
+                    rackSnapshot.hasError) {
+                  return Center(
+                    child: Text(
+                      'Error cargando mapa: ${productSnapshot.error ?? palletSnapshot.error ?? rackSnapshot.error}',
+                    ),
+                  );
+                }
+                if (!productSnapshot.hasData ||
+                    !palletSnapshot.hasData ||
+                    !rackSnapshot.hasData) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+
+                final racks = rackSnapshot.data!.docs
+                    .map((doc) => {'rackId': doc.id, ...doc.data()})
+                    .toList();
+                _currentRacks = racks;
+                final palletDocs = palletSnapshot.data!.docs;
+                final placedByLocation = _placedByLocation(palletDocs);
+                final moveMode = _selectedPalletToMove != null;
+                final filteredRacks = moveMode
+                    ? racks
+                    : <Map<String, dynamic>>[
+                        for (var index = 0; index < racks.length; index++)
+                          if (_rackHasQueryMatch(
+                            racks[index],
+                            _rackNumberFromIdOrName(racks[index], index + 1),
+                            placedByLocation,
+                            _query,
+                          ))
+                            racks[index],
+                      ];
+                final products = productSnapshot.data!.docs;
+                final unassigned =
+                    palletDocs
+                        .map((doc) => {'palletId': doc.id, ...doc.data()})
+                        .where((pallet) {
+                          final locationCode =
+                              pallet['locationCode']?.toString() ?? '';
+                          final boxes = _toInt(pallet['boxes']);
+                          final status = pallet['status']?.toString() ?? '';
+                          return locationCode.isEmpty &&
+                              boxes > 0 &&
+                              status != 'agotado' &&
+                              _palletMatchesQuery(pallet, _query);
+                        })
+                        .toList()
+                      ..sort(
+                        (a, b) =>
+                            _toInt(a['boxes']).compareTo(_toInt(b['boxes'])),
+                      );
+
+                return Column(
+                  children: [
+                    if (moveMode)
+                      Material(
+                        color: Colors.white,
+                        elevation: 2,
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 6,
+                          ),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: OutlinedButton.icon(
+                                  onPressed: () => _movePalletOutside(
+                                    context,
+                                    _selectedPalletToMove!,
+                                  ),
+                                  icon: const Icon(Icons.outbox_outlined),
+                                  label: const Text('Sacar del rack'),
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              IconButton(
+                                tooltip: 'Cancelar movimiento',
+                                onPressed: _clearSelectedPallet,
+                                icon: const Icon(Icons.close),
+                              ),
+                            ],
+                          ),
+                        ),
                       )
-                      .toList();
-                  final products = productSnapshot.data!.docs;
-                  final unassigned =
-                      palletDocs
-                          .map((doc) => {'palletId': doc.id, ...doc.data()})
-                          .where((pallet) {
-                            final locationCode =
-                                pallet['locationCode']?.toString() ?? '';
-                            final boxes = _toInt(pallet['boxes']);
-                            final status = pallet['status']?.toString() ?? '';
-                            return locationCode.isEmpty &&
-                                boxes > 0 &&
-                                status != 'agotado' &&
-                                _palletMatchesQuery(pallet, _query);
-                          })
-                          .toList()
-                        ..sort(
-                          (a, b) =>
-                              _toInt(a['boxes']).compareTo(_toInt(b['boxes'])),
-                        );
-
-                  return Column(
-                    children: [
+                    else ...[
                       SizedBox(
                         height: 235,
                         child: _PendingPalletsPanel(
@@ -692,38 +935,47 @@ class _WarehouseRackPageState extends State<WarehouseRackPage> {
                               _showPalletEntryDialog(context, products),
                           onDropOutside: (pallet) =>
                               _clearPalletLocation(context, pallet),
+                          onSelectPallet: _selectPalletToMove,
+                          onDepletePallet: (pallet) =>
+                              _depletePallet(context, pallet),
                           onQueryChanged: (value) {
                             setState(() => _query = value.trim().toLowerCase());
                           },
                         ),
                       ),
                       const Divider(height: 1),
-                      Expanded(
-                        child: _RackMap(
-                          racks: filteredRacks,
-                          placedByLocation: placedByLocation,
-                          query: _query,
-                          onEditRack: (rack) =>
-                              _showRackDialog(context, rack: rack),
-                          onDeleteRack: (rack) => _deleteRack(context, rack),
-                          onAccept: (pallet, rackId, level, position) =>
-                              _placePallet(
-                                context,
-                                pallet: pallet,
-                                rackId: rackId,
-                                level: level,
-                                position: position,
-                              ),
-                        ),
-                      ),
                     ],
-                  );
-                },
-              );
-            },
-          );
-        },
-      ),
+                    Expanded(
+                      child: _RackMap(
+                        racks: filteredRacks,
+                        placedByLocation: placedByLocation,
+                        query: moveMode ? '' : _query,
+                        selectedPallet: _selectedPalletToMove,
+                        onEditRack: (rack) =>
+                            _showRackDialog(context, rack: rack),
+                        onDeleteRack: (rack) => _deleteRack(context, rack),
+                        onSelectPallet: _selectPalletToMove,
+                        onDepletePallet: (pallet) =>
+                            _depletePallet(context, pallet),
+                        onAccept: (pallet, rackId, level, position) async {
+                          final moved = await _placePallet(
+                            context,
+                            pallet: pallet,
+                            rackId: rackId,
+                            level: level,
+                            position: position,
+                          );
+                          if (moved && mounted) _clearSelectedPallet();
+                        },
+                      ),
+                    ),
+                  ],
+                );
+              },
+            );
+          },
+        );
+      },
     );
   }
 }
@@ -733,16 +985,22 @@ class _RackMap extends StatefulWidget {
     required this.racks,
     required this.placedByLocation,
     required this.query,
+    required this.selectedPallet,
     required this.onEditRack,
     required this.onDeleteRack,
+    required this.onSelectPallet,
+    required this.onDepletePallet,
     required this.onAccept,
   });
 
   final List<Map<String, dynamic>> racks;
   final Map<String, List<Map<String, dynamic>>> placedByLocation;
   final String query;
+  final Map<String, dynamic>? selectedPallet;
   final ValueChanged<Map<String, dynamic>> onEditRack;
   final ValueChanged<Map<String, dynamic>> onDeleteRack;
+  final ValueChanged<Map<String, dynamic>> onSelectPallet;
+  final ValueChanged<Map<String, dynamic>> onDepletePallet;
   final Future<void> Function(
     Map<String, dynamic> pallet,
     String rackId,
@@ -831,29 +1089,34 @@ class _RackMapState extends State<_RackMap> {
         ),
       );
     }
+    final moveMode = widget.selectedPallet != null;
     final sections = <_RackSectionInfo>[];
     final slivers = <Widget>[
-      const SliverToBoxAdapter(child: SizedBox(height: 12)),
+      SliverToBoxAdapter(child: SizedBox(height: moveMode ? 4 : 12)),
     ];
-    for (final rack in widget.racks) {
+    for (var rackIndex = 0; rackIndex < widget.racks.length; rackIndex++) {
+      final rack = widget.racks[rackIndex];
       final rackId = rack['rackId']?.toString() ?? '';
-      final rackName = rack['name']?.toString() ?? rackId;
+      final rackNumber = _rackNumberFromIdOrName(rack, rackIndex + 1);
+      final rackName = _rackDisplayName(rack, rackNumber);
       final levels = _levelsForRack(rack);
       final positions = _positionsForRack(rack);
-      slivers.add(
-        SliverToBoxAdapter(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            child: _RackControls(
-              rackName: rackName,
-              levelCount: levels.length,
-              positionCount: positions.length,
-              onEdit: () => widget.onEditRack(rack),
-              onDelete: () => widget.onDeleteRack(rack),
+      if (widget.selectedPallet == null) {
+        slivers.add(
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: _RackControls(
+                rackName: rackName,
+                levelCount: levels.length,
+                positionCount: positions.length,
+                onEdit: () => widget.onEditRack(rack),
+                onDelete: () => widget.onDeleteRack(rack),
+              ),
             ),
           ),
-        ),
-      );
+        );
+      }
       for (final level in levels) {
         final hasVisiblePosition = positions.any((position) {
           if (widget.query.isEmpty) return true;
@@ -879,7 +1142,8 @@ class _RackMapState extends State<_RackMap> {
         );
         final section = _RackSectionInfo(
           title: '$rackName - Piso $level',
-          subtitle: '${positions.length} posiciones por piso',
+          subtitle:
+              '${positions.length} posiciones por piso - $rackNumber.1 a $rackNumber.${positions.length}',
           key: sectionKey,
         );
         sections.add(section);
@@ -890,18 +1154,29 @@ class _RackMapState extends State<_RackMap> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  _RackSectionTitle(
-                    title: section.title,
-                    subtitle: section.subtitle,
-                  ),
+                  if (!moveMode)
+                    _RackSectionTitle(
+                      title: section.title,
+                      subtitle: section.subtitle,
+                    ),
                   Padding(
-                    padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                    padding: EdgeInsets.fromLTRB(
+                      moveMode ? 6 : 12,
+                      moveMode ? 3 : 0,
+                      moveMode ? 6 : 12,
+                      moveMode ? 3 : 12,
+                    ),
                     child: _RackLevelGrid(
                       rackId: rackId,
+                      rackName: rackName,
+                      rackNumber: rackNumber,
                       level: level,
                       positions: positions,
                       placedByLocation: widget.placedByLocation,
                       query: widget.query,
+                      selectedPallet: widget.selectedPallet,
+                      onSelectPallet: widget.onSelectPallet,
+                      onDepletePallet: widget.onDepletePallet,
                       onAccept: widget.onAccept,
                     ),
                   ),
@@ -911,7 +1186,9 @@ class _RackMapState extends State<_RackMap> {
           ),
         );
       }
-      slivers.add(const SliverToBoxAdapter(child: SizedBox(height: 12)));
+      slivers.add(
+        SliverToBoxAdapter(child: SizedBox(height: moveMode ? 4 : 12)),
+      );
     }
 
     _visibleSections = sections;
@@ -923,7 +1200,8 @@ class _RackMapState extends State<_RackMap> {
 
     return Column(
       children: [
-        _CurrentRackHeader(title: _currentTitle, subtitle: _currentSubtitle),
+        if (!moveMode)
+          _CurrentRackHeader(title: _currentTitle, subtitle: _currentSubtitle),
         Expanded(
           child: NotificationListener<ScrollNotification>(
             onNotification: (_) {
@@ -972,39 +1250,44 @@ class _RackControls extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Card(
-      margin: const EdgeInsets.only(bottom: 8),
+      margin: const EdgeInsets.only(bottom: 6),
       child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        padding: const EdgeInsets.fromLTRB(10, 4, 4, 4),
+        child: Row(
           children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
                     rackName,
-                    style: const TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontWeight: FontWeight.bold),
                   ),
-                ),
-                Text('$levelCount piso(s)'),
-                IconButton(
-                  tooltip: 'Editar rack',
-                  onPressed: onEdit,
-                  icon: const Icon(Icons.edit_outlined),
-                ),
-                IconButton(
-                  tooltip: 'Eliminar rack',
-                  onPressed: onDelete,
-                  icon: const Icon(Icons.delete_outline),
-                ),
-              ],
+                  Text(
+                    '$levelCount pisos · $positionCount posiciones por piso',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(color: Colors.black54, fontSize: 11),
+                  ),
+                ],
+              ),
             ),
-            Text(
-              '$positionCount posiciones por piso',
-              style: const TextStyle(color: Colors.black54),
+            IconButton(
+              tooltip: 'Editar rack',
+              onPressed: onEdit,
+              visualDensity: VisualDensity.compact,
+              constraints: const BoxConstraints.tightFor(width: 36, height: 36),
+              icon: const Icon(Icons.edit_outlined, size: 20),
+            ),
+            IconButton(
+              tooltip: 'Eliminar rack',
+              onPressed: onDelete,
+              visualDensity: VisualDensity.compact,
+              constraints: const BoxConstraints.tightFor(width: 36, height: 36),
+              icon: const Icon(Icons.delete_outline, size: 20),
             ),
           ],
         ),
@@ -1103,18 +1386,28 @@ class _RackSectionTitle extends StatelessWidget {
 class _RackLevelGrid extends StatelessWidget {
   const _RackLevelGrid({
     required this.rackId,
+    required this.rackName,
+    required this.rackNumber,
     required this.level,
     required this.positions,
     required this.placedByLocation,
     required this.query,
+    required this.selectedPallet,
+    required this.onSelectPallet,
+    required this.onDepletePallet,
     required this.onAccept,
   });
 
   final String rackId;
+  final String rackName;
+  final int rackNumber;
   final int level;
   final List<_RackPosition> positions;
   final Map<String, List<Map<String, dynamic>>> placedByLocation;
   final String query;
+  final Map<String, dynamic>? selectedPallet;
+  final ValueChanged<Map<String, dynamic>> onSelectPallet;
+  final ValueChanged<Map<String, dynamic>> onDepletePallet;
   final Future<void> Function(
     Map<String, dynamic> pallet,
     String rackId,
@@ -1127,6 +1420,18 @@ class _RackLevelGrid extends StatelessWidget {
   Widget build(BuildContext context) {
     bool positionMatches(_RackPosition position) {
       if (query.isEmpty) return true;
+      final positionCode = _positionDisplayCode(
+        rackNumber,
+        positions,
+        position,
+      );
+      final visibleLocation = [
+        'rack $rackNumber',
+        positionCode,
+        position.label,
+        'piso $level',
+      ].map((value) => value.toLowerCase()).join(' ');
+      if (visibleLocation.contains(query)) return true;
       final locationCode = '$rackId-L$level-${position.code}';
       final pallets = placedByLocation[locationCode] ?? [];
       return pallets.any((pallet) {
@@ -1144,16 +1449,17 @@ class _RackLevelGrid extends StatelessWidget {
 
     final hasVisiblePosition = positions.any(positionMatches);
     if (!hasVisiblePosition) return const SizedBox.shrink();
+    final moveMode = selectedPallet != null;
 
     return Card(
       margin: EdgeInsets.zero,
       child: Padding(
-        padding: const EdgeInsets.all(10),
+        padding: EdgeInsets.all(moveMode ? 5 : 10),
         child: GridView.count(
           crossAxisCount: positions.length < 4 ? 4 : positions.length,
-          childAspectRatio: 1.25,
-          crossAxisSpacing: 8,
-          mainAxisSpacing: 8,
+          childAspectRatio: moveMode ? 1.08 : 1.25,
+          crossAxisSpacing: moveMode ? 5 : 8,
+          mainAxisSpacing: moveMode ? 5 : 8,
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
           children: positions.map((position) {
@@ -1162,12 +1468,26 @@ class _RackLevelGrid extends StatelessWidget {
             }
             final locationCode = '$rackId-L$level-${position.code}';
             final pallets = placedByLocation[locationCode] ?? [];
+            final positionCode = _positionDisplayCode(
+              rackNumber,
+              positions,
+              position,
+            );
+            final visiblePositionMatches = [
+              'rack $rackNumber',
+              positionCode,
+              position.label,
+              'piso $level',
+            ].map((value) => value.toLowerCase()).join(' ').contains(query);
             return _RackSlot(
               rackId: rackId,
+              rackName: rackName,
+              rackNumber: rackNumber,
               level: level,
               position: position,
+              positionCode: positionCode,
               locationCode: locationCode,
-              pallets: query.isEmpty
+              pallets: query.isEmpty || visiblePositionMatches
                   ? pallets
                   : pallets.where((pallet) {
                       final values =
@@ -1186,6 +1506,9 @@ class _RackLevelGrid extends StatelessWidget {
                               .join(' ');
                       return values.contains(query);
                     }).toList(),
+              selectedPallet: selectedPallet,
+              onSelectPallet: onSelectPallet,
+              onDepletePallet: onDepletePallet,
               onAccept: onAccept,
             );
           }).toList(),
@@ -1198,18 +1521,30 @@ class _RackLevelGrid extends StatelessWidget {
 class _RackSlot extends StatelessWidget {
   const _RackSlot({
     required this.rackId,
+    required this.rackName,
+    required this.rackNumber,
     required this.level,
     required this.position,
+    required this.positionCode,
     required this.locationCode,
     required this.pallets,
+    required this.selectedPallet,
+    required this.onSelectPallet,
+    required this.onDepletePallet,
     required this.onAccept,
   });
 
   final String rackId;
+  final String rackName;
+  final int rackNumber;
   final int level;
   final _RackPosition position;
+  final String positionCode;
   final String locationCode;
   final List<Map<String, dynamic>> pallets;
+  final Map<String, dynamic>? selectedPallet;
+  final ValueChanged<Map<String, dynamic>> onSelectPallet;
+  final ValueChanged<Map<String, dynamic>> onDepletePallet;
   final Future<void> Function(
     Map<String, dynamic> pallet,
     String rackId,
@@ -1226,222 +1561,203 @@ class _RackSlot extends StatelessWidget {
       },
       builder: (context, candidateData, rejectedData) {
         final active = candidateData.isNotEmpty;
-        return AnimatedContainer(
-          duration: const Duration(milliseconds: 140),
-          padding: const EdgeInsets.all(8),
-          decoration: BoxDecoration(
-            color: active ? const Color(0xFFE8F0FE) : const Color(0xFFF8F8F8),
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(
-              color: active ? Colors.black : Colors.black26,
-              width: active ? 2 : 1,
+        final tapMoveActive = selectedPallet != null;
+        return GestureDetector(
+          onTap: tapMoveActive
+              ? () => onAccept(selectedPallet!, rackId, level, position.code)
+              : null,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 140),
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: active
+                  ? const Color(0xFFE8F0FE)
+                  : tapMoveActive
+                  ? const Color(0xFFFFF9E6)
+                  : const Color(0xFFF8F8F8),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: active || tapMoveActive ? Colors.black : Colors.black26,
+                width: active || tapMoveActive ? 2 : 1,
+              ),
             ),
+            child: tapMoveActive
+                ? _MoveRackDestination(
+                    rackName: rackName,
+                    level: level,
+                    positionCode: positionCode,
+                  )
+                : active
+                ? _RackDropPreview(
+                    position: position,
+                    positionCode: positionCode,
+                    locationCode: locationCode,
+                  )
+                : pallets.isEmpty
+                ? Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        positionCode,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                      const Spacer(),
+                      const Text(
+                        'Vacia',
+                        style: TextStyle(fontSize: 10, color: Colors.black54),
+                      ),
+                    ],
+                  )
+                : _RackSlotPallets(
+                    pallets: pallets,
+                    onSelectPallet: onSelectPallet,
+                    onDepletePallet: onDepletePallet,
+                  ),
           ),
-          child: active
-              ? _RackDropPreview(position: position, locationCode: locationCode)
-              : pallets.isEmpty
-              ? Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      position.label,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                    const Spacer(),
-                    Text(
-                      locationCode,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontSize: 11),
-                    ),
-                  ],
-                )
-              : _RackSlotPallets(
-                  pallets: pallets,
-                  position: position,
-                  locationCode: locationCode,
-                ),
         );
       },
     );
   }
 }
 
-class _RackSlotPallets extends StatefulWidget {
-  const _RackSlotPallets({
-    required this.pallets,
-    required this.position,
-    required this.locationCode,
+class _MoveRackDestination extends StatelessWidget {
+  const _MoveRackDestination({
+    required this.rackName,
+    required this.level,
+    required this.positionCode,
   });
 
-  final List<Map<String, dynamic>> pallets;
-  final _RackPosition position;
-  final String locationCode;
-
-  @override
-  State<_RackSlotPallets> createState() => _RackSlotPalletsState();
-}
-
-class _RackSlotPalletsState extends State<_RackSlotPallets> {
-  int _selectedIndex = 0;
-
-  @override
-  void didUpdateWidget(covariant _RackSlotPallets oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (_selectedIndex >= widget.pallets.length) {
-      _selectedIndex = 0;
-    }
-  }
-
-  void _showNextPallet() {
-    if (widget.pallets.length <= 1) return;
-    setState(() {
-      _selectedIndex = (_selectedIndex + 1) % widget.pallets.length;
-    });
-  }
+  final String rackName;
+  final int level;
+  final String positionCode;
 
   @override
   Widget build(BuildContext context) {
-    if (widget.pallets.length == 1) {
-      final pallet = widget.pallets.first;
-      return LongPressDraggable<Map<String, dynamic>>(
-        data: pallet,
-        feedback: const _InvisibleDragFeedback(),
-        childWhenDragging: const Center(child: Text('Moviendo...')),
-        child: _PalletCard(pallet: pallet, compact: true),
-      );
-    }
-
-    final selectedPallet = widget.pallets[_selectedIndex];
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        Row(
-          children: [
-            Expanded(
-              child: Text(
-                widget.position.label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 11,
-                ),
-              ),
-            ),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-              decoration: BoxDecoration(
-                color: Colors.black,
-                borderRadius: BorderRadius.circular(999),
-              ),
-              child: Text(
-                '${widget.pallets.length}',
-                style: const TextStyle(color: Colors.white, fontSize: 10),
-              ),
-            ),
-          ],
-        ),
         Text(
-          widget.locationCode,
+          positionCode,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
-          style: const TextStyle(fontSize: 9, color: Colors.black54),
+          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
         ),
         const SizedBox(height: 3),
-        Expanded(
-          child: GestureDetector(
-            onDoubleTap: _showNextPallet,
-            child: LongPressDraggable<Map<String, dynamic>>(
-              data: selectedPallet,
-              feedback: const _InvisibleDragFeedback(),
-              childWhenDragging: Opacity(
-                opacity: 0.25,
-                child: _GalleryPalletCard(
-                  pallet: selectedPallet,
-                  index: _selectedIndex + 1,
-                  total: widget.pallets.length,
-                ),
-              ),
-              child: _GalleryPalletCard(
-                pallet: selectedPallet,
-                index: _selectedIndex + 1,
-                total: widget.pallets.length,
-              ),
-            ),
-          ),
+        Text(
+          '$rackName · Piso $level',
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          textAlign: TextAlign.center,
+          style: const TextStyle(fontSize: 9, color: Colors.black54),
         ),
       ],
     );
   }
 }
 
-class _GalleryPalletCard extends StatelessWidget {
-  const _GalleryPalletCard({
-    required this.pallet,
-    required this.index,
-    required this.total,
+class _RackSlotPallets extends StatelessWidget {
+  const _RackSlotPallets({
+    required this.pallets,
+    required this.onSelectPallet,
+    required this.onDepletePallet,
   });
 
-  final Map<String, dynamic> pallet;
-  final int index;
-  final int total;
+  final List<Map<String, dynamic>> pallets;
+  final ValueChanged<Map<String, dynamic>> onSelectPallet;
+  final ValueChanged<Map<String, dynamic>> onDepletePallet;
 
   @override
   Widget build(BuildContext context) {
-    final sku = pallet['sku']?.toString() ?? '';
-    final name = pallet['productName']?.toString() ?? '';
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(5),
-        border: Border.all(color: Colors.black12),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
+    final visiblePallets = pallets.take(2).toList();
+    final hiddenCount = pallets.length - visiblePallets.length;
+    return Stack(
+      children: [
+        Column(
+          children: [
+            for (var index = 0; index < visiblePallets.length; index++)
               Expanded(
-                child: Text(
-                  sku,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 9,
-                    fontWeight: FontWeight.bold,
+                child: GestureDetector(
+                  onLongPress: () => onSelectPallet(visiblePallets[index]),
+                  onDoubleTap: () => onDepletePallet(visiblePallets[index]),
+                  child: Container(
+                    width: double.infinity,
+                    padding: EdgeInsets.fromLTRB(
+                      4,
+                      2,
+                      hiddenCount > 0 ? 24 : 4,
+                      2,
+                    ),
+                    decoration: BoxDecoration(
+                      border: index < visiblePallets.length - 1
+                          ? const Border(
+                              bottom: BorderSide(color: Colors.black12),
+                            )
+                          : null,
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          visiblePallets[index]['sku']?.toString() ?? '',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        Text(
+                          '${_palletBoxCount(visiblePallets[index])} cajas',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontSize: 9),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),
-              Text(
-                '$index/$total',
-                style: const TextStyle(fontSize: 9, color: Colors.black54),
+          ],
+        ),
+        if (hiddenCount > 0)
+          Positioned(
+            top: 3,
+            right: 3,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+              decoration: BoxDecoration(
+                color: Colors.black,
+                borderRadius: BorderRadius.circular(999),
               ),
-            ],
-          ),
-          const SizedBox(height: 2),
-          Expanded(
-            child: Text(
-              name,
-              maxLines: 3,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: 9),
+              child: Text(
+                '+$hiddenCount',
+                style: const TextStyle(color: Colors.white, fontSize: 9),
+              ),
             ),
           ),
-        ],
-      ),
+      ],
     );
   }
 }
 
+int _palletBoxCount(Map<String, dynamic> pallet) {
+  final value = pallet['boxes'];
+  if (value is num) return value.toInt();
+  return int.tryParse(value?.toString() ?? '') ?? 0;
+}
+
 class _RackDropPreview extends StatelessWidget {
-  const _RackDropPreview({required this.position, required this.locationCode});
+  const _RackDropPreview({
+    required this.position,
+    required this.positionCode,
+    required this.locationCode,
+  });
 
   final _RackPosition position;
+  final String positionCode;
   final String locationCode;
 
   @override
@@ -1460,11 +1776,18 @@ class _RackDropPreview extends StatelessWidget {
           const Icon(Icons.place_outlined, size: 16),
           const SizedBox(height: 2),
           Text(
-            position.label,
+            positionCode,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             textAlign: TextAlign.center,
             style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+          ),
+          Text(
+            position.label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.center,
+            style: const TextStyle(fontSize: 9),
           ),
           Text(
             locationCode,
@@ -1479,13 +1802,57 @@ class _RackDropPreview extends StatelessWidget {
   }
 }
 
-class _InvisibleDragFeedback extends StatelessWidget {
-  const _InvisibleDragFeedback();
+class _OutsideRackTarget extends StatelessWidget {
+  const _OutsideRackTarget({
+    required this.selectedPallet,
+    required this.onMoveOutside,
+  });
+
+  final Map<String, dynamic>? selectedPallet;
+  final ValueChanged<Map<String, dynamic>> onMoveOutside;
 
   @override
   Widget build(BuildContext context) {
-    return IgnorePointer(
-      child: Opacity(opacity: 0, child: SizedBox(width: 1, height: 1)),
+    return DragTarget<Map<String, dynamic>>(
+      onAcceptWithDetails: (details) => onMoveOutside(details.data),
+      builder: (context, candidateData, rejectedData) {
+        final dragging = candidateData.isNotEmpty;
+        final moveMode = selectedPallet != null;
+        final active = dragging || moveMode;
+        return GestureDetector(
+          onTap: moveMode ? () => onMoveOutside(selectedPallet!) : null,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 140),
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              color: active ? const Color(0xFFE8F0FE) : const Color(0xFFF7F7F7),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: active ? Colors.black : Colors.black26,
+                width: active ? 2 : 1,
+              ),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.outbox_outlined,
+                  color: active ? Colors.black : Colors.black54,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    dragging
+                        ? 'Suelta para sacar del rack'
+                        : 'Soltar aqui para sacar del rack',
+                    style: const TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 }
@@ -1496,6 +1863,8 @@ class _PendingPalletsPanel extends StatelessWidget {
     required this.query,
     required this.onAddPallet,
     required this.onDropOutside,
+    required this.onSelectPallet,
+    required this.onDepletePallet,
     required this.onQueryChanged,
   });
 
@@ -1503,6 +1872,8 @@ class _PendingPalletsPanel extends StatelessWidget {
   final String query;
   final VoidCallback onAddPallet;
   final ValueChanged<Map<String, dynamic>> onDropOutside;
+  final ValueChanged<Map<String, dynamic>> onSelectPallet;
+  final ValueChanged<Map<String, dynamic>> onDepletePallet;
   final ValueChanged<String> onQueryChanged;
 
   @override
@@ -1543,46 +1914,9 @@ class _PendingPalletsPanel extends StatelessWidget {
         const SizedBox(height: 6),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 12),
-          child: DragTarget<Map<String, dynamic>>(
-            onAcceptWithDetails: (details) => onDropOutside(details.data),
-            builder: (context, candidateData, rejectedData) {
-              final active = candidateData.isNotEmpty;
-              return AnimatedContainer(
-                duration: const Duration(milliseconds: 140),
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 10,
-                ),
-                decoration: BoxDecoration(
-                  color: active
-                      ? const Color(0xFFE8F0FE)
-                      : const Color(0xFFF7F7F7),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(
-                    color: active ? Colors.black : Colors.black26,
-                    width: active ? 2 : 1,
-                  ),
-                ),
-                child: Row(
-                  children: [
-                    Icon(
-                      Icons.outbox_outlined,
-                      color: active ? Colors.black : Colors.black54,
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        active
-                            ? 'Suelta para sacar del rack'
-                            : 'Soltar aqui para sacar del rack',
-                        style: const TextStyle(fontWeight: FontWeight.w600),
-                      ),
-                    ),
-                  ],
-                ),
-              );
-            },
+          child: _OutsideRackTarget(
+            selectedPallet: null,
+            onMoveOutside: onDropOutside,
           ),
         ),
         const SizedBox(height: 8),
@@ -1598,13 +1932,9 @@ class _PendingPalletsPanel extends StatelessWidget {
                     final pallet = pallets[index];
                     return SizedBox(
                       width: 210,
-                      child: LongPressDraggable<Map<String, dynamic>>(
-                        data: pallet,
-                        feedback: const _InvisibleDragFeedback(),
-                        childWhenDragging: Opacity(
-                          opacity: 0.35,
-                          child: _PalletCard(pallet: pallet),
-                        ),
+                      child: GestureDetector(
+                        onLongPress: () => onSelectPallet(pallet),
+                        onDoubleTap: () => onDepletePallet(pallet),
                         child: _PalletCard(pallet: pallet),
                       ),
                     );
@@ -1617,10 +1947,9 @@ class _PendingPalletsPanel extends StatelessWidget {
 }
 
 class _PalletCard extends StatelessWidget {
-  const _PalletCard({required this.pallet, this.compact = false});
+  const _PalletCard({required this.pallet});
 
   final Map<String, dynamic> pallet;
-  final bool compact;
 
   int _toInt(dynamic value) {
     if (value is num) return value.toInt();
@@ -1634,7 +1963,7 @@ class _PalletCard extends StatelessWidget {
     final boxes = _toInt(pallet['boxes']);
 
     return Container(
-      padding: EdgeInsets.all(compact ? 6 : 10),
+      padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(8),
@@ -1653,9 +1982,9 @@ class _PalletCard extends StatelessWidget {
           Flexible(
             child: Text(
               name,
-              maxLines: compact ? 2 : 2,
+              maxLines: 2,
               overflow: TextOverflow.ellipsis,
-              style: TextStyle(fontSize: compact ? 11 : 14),
+              style: const TextStyle(fontSize: 14),
             ),
           ),
           Text('$boxes cajas', style: const TextStyle(fontSize: 12)),

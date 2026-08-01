@@ -1,6 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 
@@ -70,9 +69,7 @@ class _PalletsPageState extends State<PalletsPage> {
           pallet['palletName']?.toString() ??
           'Pallet ${pallet['sku']?.toString() ?? ''}',
     );
-    final boxesController = TextEditingController(
-      text: _toInt(pallet['boxes']).toString(),
-    );
+    final boxes = _toInt(pallet['boxes']);
     final selectedImages = <XFile>[];
     var saving = false;
 
@@ -103,14 +100,24 @@ class _PalletsPageState extends State<PalletsPage> {
                       ),
                     ),
                     const SizedBox(height: 12),
-                    TextField(
-                      controller: boxesController,
-                      keyboardType: TextInputType.number,
-                      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                      decoration: const InputDecoration(
-                        labelText: 'Cantidad de cajas',
-                        prefixIcon: Icon(Icons.numbers),
-                        border: OutlineInputBorder(),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF3F6FA),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.black12),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.inventory_2_outlined, size: 20),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              '$boxes cajas. La cantidad solo se cambia dando entrada a pallets desde Mapa de Racks.',
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                     const SizedBox(height: 12),
@@ -201,13 +208,10 @@ class _PalletsPageState extends State<PalletsPage> {
                     ? null
                     : () async {
                         final name = nameController.text.trim();
-                        final boxes = int.tryParse(boxesController.text) ?? -1;
-                        if (name.isEmpty || boxes < 0) {
+                        if (name.isEmpty) {
                           ScaffoldMessenger.of(context).showSnackBar(
                             const SnackBar(
-                              content: Text(
-                                'Ingresa nombre y cantidad valida.',
-                              ),
+                              content: Text('Ingresa un nombre valido.'),
                             ),
                           );
                           return;
@@ -218,7 +222,6 @@ class _PalletsPageState extends State<PalletsPage> {
                           await service.updateWarehousePalletDetails(
                             palletId: palletId,
                             palletName: name,
-                            boxes: boxes,
                           );
                           if (selectedImages.isNotEmpty) {
                             await service.addWarehousePalletImages(
@@ -252,7 +255,59 @@ class _PalletsPageState extends State<PalletsPage> {
       ),
     );
     nameController.dispose();
-    boxesController.dispose();
+  }
+
+  Future<void> _depletePallet(
+    BuildContext context,
+    String palletId,
+    Map<String, dynamic> pallet,
+  ) async {
+    final boxes = _toInt(pallet['boxes']);
+    if (boxes <= 0) return;
+    final name =
+        pallet['palletName']?.toString() ?? 'Pallet ${pallet['sku'] ?? ''}';
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Dar de baja pallet'),
+        content: Text(
+          'Este pallet esta vacio?\n\n'
+          'Se descontaran $boxes cajas del inventario y el pallet quedara como agotado.\n\n'
+          '$name',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Dar de baja'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !context.mounted) return;
+    try {
+      final deducted = await context
+          .read<FirebaseService>()
+          .depleteWarehousePallet(palletId);
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            deducted > 0
+                ? '$deducted cajas descontadas. Pallet agotado.'
+                : 'El pallet ya no tenia cantidad disponible.',
+          ),
+        ),
+      );
+    } catch (error) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Error: $error')));
+    }
   }
 
   @override
@@ -305,6 +360,8 @@ class _PalletsPageState extends State<PalletsPage> {
                     final data = doc.data();
                     final boxes = _toInt(data['boxes']);
                     final status = data['status']?.toString() ?? '';
+                    final photoUploadStatus =
+                        data['photoUploadStatus']?.toString() ?? '';
                     final location = data['locationCode']?.toString() ?? '';
                     final photos = _photoUrls(data);
                     final palletName =
@@ -331,10 +388,42 @@ class _PalletsPageState extends State<PalletsPage> {
                         subtitle: Text(
                           '${data['sku'] ?? ''} - ${data['productName'] ?? ''}\n'
                           '$boxes cajas | ${location.isEmpty ? 'Sin ubicacion' : location} | '
-                          '$status | ${photos.length} foto(s)',
+                          '$status | ${photos.length} foto(s)'
+                          '${photoUploadStatus.isEmpty ? '' : ' | foto: $photoUploadStatus'}',
                         ),
                         isThreeLine: true,
-                        trailing: const Icon(Icons.edit_outlined),
+                        trailing: status == 'agotado' || boxes <= 0
+                            ? const Icon(Icons.check_circle_outline)
+                            : PopupMenuButton<String>(
+                                onSelected: (value) {
+                                  if (value == 'edit') {
+                                    _editPallet(context, doc.id, data);
+                                  }
+                                  if (value == 'deplete') {
+                                    _depletePallet(context, doc.id, data);
+                                  }
+                                },
+                                itemBuilder: (context) => const [
+                                  PopupMenuItem(
+                                    value: 'edit',
+                                    child: ListTile(
+                                      leading: Icon(Icons.edit_outlined),
+                                      title: Text('Editar'),
+                                      contentPadding: EdgeInsets.zero,
+                                    ),
+                                  ),
+                                  PopupMenuItem(
+                                    value: 'deplete',
+                                    child: ListTile(
+                                      leading: Icon(
+                                        Icons.remove_circle_outline,
+                                      ),
+                                      title: Text('Dar de baja'),
+                                      contentPadding: EdgeInsets.zero,
+                                    ),
+                                  ),
+                                ],
+                              ),
                         onTap: () => _editPallet(context, doc.id, data),
                       ),
                     );

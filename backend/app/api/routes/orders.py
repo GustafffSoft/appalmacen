@@ -1,16 +1,29 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
+from app.api.dependencies.auth import require_active_user
 from app.core.config import get_settings
-from app.models.schemas import PalletAiReview, PalletRequest, ProcessOrderRequest, ProcessOrderResponse
+from app.models.schemas import (
+    PalletAiReview,
+    PalletRequest,
+    ProcessOrderRequest,
+    ProcessOrderResponse,
+)
 from app.services.firebase_service import save_pallet_plan, update_order_status
 from app.services.image_service import download_image
 from app.services.invoice_identification_service import identify_products_from_invoice
-from app.services.openai_service import OpenAIConfigurationError, review_pallet_plan_with_ai
+from app.services.openai_service import (
+    OpenAIConfigurationError,
+    review_pallet_plan_with_ai,
+)
 from app.services.pallet_service import run_palletizing
 
-router = APIRouter(prefix="/orders", tags=["orders"])
+router = APIRouter(
+    prefix="/orders",
+    tags=["orders"],
+    dependencies=[Depends(require_active_user)],
+)
 
 MIN_PALLET_HEIGHT_IN = 83.0
 MAX_PALLET_HEIGHT_IN = 86.0
@@ -24,7 +37,9 @@ def _normalize_pallet(request_pallet: PalletRequest | None, settings) -> PalletR
         maxWeightKg=settings.pallet_max_weight_kg_default,
     )
 
-    bounded_height = min(max(pallet.maxHeightCm, MIN_PALLET_HEIGHT_IN), MAX_PALLET_HEIGHT_IN)
+    bounded_height = min(
+        max(pallet.maxHeightCm, MIN_PALLET_HEIGHT_IN), MAX_PALLET_HEIGHT_IN
+    )
     return PalletRequest(
         lengthCm=pallet.lengthCm,
         widthCm=pallet.widthCm,
@@ -33,7 +48,9 @@ def _normalize_pallet(request_pallet: PalletRequest | None, settings) -> PalletR
     )
 
 
-async def _build_ai_review(boxes, pallet_views, overall_stats, pallet, packing_log) -> PalletAiReview | None:
+async def _build_ai_review(
+    boxes, pallet_views, overall_stats, pallet, packing_log
+) -> PalletAiReview | None:
     try:
         review_payload, model = await review_pallet_plan_with_ai(
             pallet=pallet,
@@ -55,7 +72,9 @@ async def _build_ai_review(boxes, pallet_views, overall_stats, pallet, packing_l
 
 
 @router.post("/{orderId}/process", response_model=ProcessOrderResponse)
-async def process_order(orderId: str, request: ProcessOrderRequest) -> ProcessOrderResponse:
+async def process_order(
+    orderId: str, request: ProcessOrderRequest
+) -> ProcessOrderResponse:
     settings = get_settings()
 
     pallet = _normalize_pallet(request.pallet, settings)
@@ -68,12 +87,18 @@ async def process_order(orderId: str, request: ProcessOrderRequest) -> ProcessOr
         if request.imageUrl:
             local_image_path = str(download_image(request.imageUrl))
 
-        identification_mode, detected_items = identify_products_from_invoice(orderId, local_image_path)
+        identification_mode, detected_items = identify_products_from_invoice(
+            orderId, local_image_path
+        )
 
         if not detected_items:
-            raise ValueError("No items identified. Add products/qty to the order before processing.")
+            raise ValueError(
+                "No items identified. Add products/qty to the order before processing."
+            )
 
-        boxes, pallet_views, overall_stats, packing_log = run_palletizing(detected_items, pallet, allow_overhang_cm)
+        boxes, pallet_views, overall_stats, packing_log = run_palletizing(
+            detected_items, pallet, allow_overhang_cm
+        )
 
         if not pallet_views:
             raise ValueError("No boxes could be packed into any pallet.")
@@ -121,5 +146,6 @@ async def process_order(orderId: str, request: ProcessOrderRequest) -> ProcessOr
             update_order_status(orderId, "error", extra={"errorMessage": str(exc)})
         except Exception:
             pass
-        raise HTTPException(status_code=500, detail=f"Order processing failed: {exc}") from exc
-
+        raise HTTPException(
+            status_code=500, detail=f"Order processing failed: {exc}"
+        ) from exc

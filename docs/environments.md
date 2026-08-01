@@ -37,7 +37,8 @@ The production build uses `APP_ENV=prod`. It cannot silently fall back to the de
 
 - Development reads `backend/.env`.
 - Production reads `backend/.env.production` when `APP_ENV=production`.
-- Hosted production should inject `FIREBASE_SERVICE_ACCOUNT_JSON` through its secret manager.
+- Hosted production uses the Cloud Run service identity and Application Default Credentials.
+- Only `OPENAI_API_KEY` is injected from Secret Manager.
 - Never commit `.env`, `.env.production`, service-account JSON, OpenAI keys, or generated logs.
 
 Use `backend/.env.production.example` as the production variable checklist.
@@ -72,8 +73,9 @@ After Authentication is enabled, register `gustafff93s@gmail.com`. The applicati
 3. Compile/import the FastAPI application.
 4. Verify no secrets or generated logs are staged.
 5. Merge reviewed changes into `main`.
-6. Deploy the production backend with production secrets.
-7. Build Flutter with `APP_ENV=prod` and the production backend URL.
-8. Smoke-test authentication, product reads, image upload, and one reversible inventory workflow.
+6. Deploy the production backend with `scripts/deploy_backend_prod.ps1`.
+7. Deploy rules with `scripts/deploy_firebase_rules.ps1 -Environment prod -IncludeStorage`.
+8. Build and deploy Flutter Hosting with `scripts/deploy_web_prod.ps1`.
+9. Smoke-test authentication, product reads, image upload, and one reversible inventory workflow.
 
 Do not copy the development Firestore database wholesale. Production should receive only approved catalog imports or explicit migration scripts.

@@ -6,16 +6,15 @@ $ErrorActionPreference = "Stop"
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $mobileDir = Join-Path $repoRoot "mobile_app"
 
-if (-not $BackendUrl.StartsWith("https://")) {
-    throw "Production backend URL must use HTTPS."
+if (-not (Get-Command firebase -ErrorAction SilentlyContinue)) {
+    throw "Firebase CLI is not installed or is not in PATH."
 }
+
+& (Join-Path $PSScriptRoot "build_web_prod.ps1") -BackendUrl $BackendUrl
 
 Push-Location $mobileDir
 try {
-    flutter build web `
-        --release `
-        --dart-define=APP_ENV=prod `
-        --dart-define=BACKEND_PROD_URL=$BackendUrl
+    firebase deploy --project prod --only hosting
 }
 finally {
     Pop-Location

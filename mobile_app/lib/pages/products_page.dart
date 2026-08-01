@@ -1,10 +1,9 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
 import 'package:provider/provider.dart';
-import 'dart:convert';
 
 import '../config.dart';
+import '../services/backend_api_client.dart';
 import '../services/firebase_service.dart';
 import 'add_product_page.dart';
 
@@ -17,6 +16,7 @@ class ProductsPage extends StatefulWidget {
 
 class _ProductsPageState extends State<ProductsPage> {
   final _searchController = TextEditingController();
+  final _apiClient = BackendApiClient();
   String _query = '';
   String? _researchingSku;
 
@@ -88,16 +88,15 @@ class _ProductsPageState extends State<ProductsPage> {
     setState(() => _researchingSku = sku);
     try {
       final uri = Uri.parse('$backendBaseUrl/api/v1/products/$sku/research');
-      final response = await http.post(
+      final response = await _apiClient.postJson(
         uri,
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
+        payload: {
           'sku': sku,
           'name': data['name']?.toString() ?? '',
           'secondName': data['secondName']?.toString(),
           'category': data['category']?.toString(),
           'alternateSkus': data['alternateSkus'] ?? [],
-        }),
+        },
       );
       if (response.statusCode < 200 || response.statusCode >= 300) {
         throw Exception('Backend ${response.statusCode}: ${response.body}');

@@ -82,19 +82,30 @@ El proyecto separa desarrollo y produccion:
 Los builds y el checklist de promocion estan documentados en
 [`docs/environments.md`](docs/environments.md).
 
+El despliegue web usa Firebase Hosting para Flutter y Cloud Run para FastAPI.
+La guia completa esta en [`docs/deployment.md`](docs/deployment.md).
+
 Build local de desarrollo:
 
 ```powershell
 .\scripts\build_web_dev.ps1 -BackendUrl http://10.0.0.28:8000
 ```
 
-El build de produccion exige una URL HTTPS de backend independiente y nunca
-usa silenciosamente el backend de desarrollo.
+Build web de produccion:
+
+```powershell
+.\scripts\build_web_prod.ps1
+```
+
+La URL predeterminada es `https://appalmacen-prod-5e987.web.app`; las rutas
+`/api/**` se envian desde Hosting a Cloud Run. Produccion nunca usa
+silenciosamente el backend de desarrollo.
 
 ## API util para seed
 
 Con backend corriendo:
 - `POST http://<ip>:8000/api/v1/products/seed`
+- Requiere el token Firebase de un usuario administrador.
 
 ## Nota de datos de productos
 

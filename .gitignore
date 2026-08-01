@@ -11,6 +11,7 @@ backend/__pycache__/
 # Python artifacts
 **/__pycache__/
 *.pyc
+*.log
 
 # Flutter artifacts
 mobile_app/.dart_tool/

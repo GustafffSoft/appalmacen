@@ -3,11 +3,13 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 import '../config.dart';
+import 'backend_api_client.dart';
 
 class AiService {
-  AiService({http.Client? client}) : _client = client ?? http.Client();
+  AiService({http.Client? client, BackendApiClient? apiClient})
+    : _apiClient = apiClient ?? BackendApiClient(client: client);
 
-  final http.Client _client;
+  final BackendApiClient _apiClient;
 
   Future<String> generateSalesMessage({
     required Map<String, dynamic> prospect,
@@ -16,10 +18,9 @@ class AiService {
     required String language,
   }) async {
     final uri = Uri.parse('$backendBaseUrl/api/v1/ai/sales-message');
-    final response = await _client.post(
+    final response = await _apiClient.postJson(
       uri,
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({
+      payload: {
         'prospectName': prospect['businessName']?.toString() ?? 'Cliente',
         'prospectType': prospect['businessType']?.toString() ?? '',
         'area': prospect['area']?.toString() ?? '',
@@ -38,7 +39,7 @@ class AiService {
               };
             })
             .toList(growable: false),
-      }),
+      },
     );
 
     if (response.statusCode < 200 || response.statusCode >= 300) {

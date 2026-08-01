@@ -1,5 +1,6 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 
+from app.api.dependencies.auth import require_active_user, require_roles
 from app.models.schemas import (
     Product,
     ProductResearchRequest,
@@ -18,10 +19,18 @@ from app.services.openai_service import research_product_with_web
 from app.services.product_catalog_scan_service import scan_product_catalog
 from app.services.product_service import SEED_PRODUCTS
 
-router = APIRouter(prefix="/products", tags=["products"])
+router = APIRouter(
+    prefix="/products",
+    tags=["products"],
+    dependencies=[Depends(require_active_user)],
+)
 
 
-@router.post("/scan-catalog", response_model=ScanProductCatalogResponse)
+@router.post(
+    "/scan-catalog",
+    response_model=ScanProductCatalogResponse,
+    dependencies=[Depends(require_roles("admin", "warehouse"))],
+)
 async def scan_product_catalog_route(
     request: ScanProductCatalogRequest,
 ) -> ScanProductCatalogResponse:
@@ -33,7 +42,11 @@ def get_products() -> list[Product]:
     return [Product(**item) for item in list_products()]
 
 
-@router.post("/seed", response_model=SeedProductsResponse)
+@router.post(
+    "/seed",
+    response_model=SeedProductsResponse,
+    dependencies=[Depends(require_roles("admin"))],
+)
 def seed_products() -> SeedProductsResponse:
     inserted = upsert_products(SEED_PRODUCTS)
     return SeedProductsResponse(
@@ -41,7 +54,11 @@ def seed_products() -> SeedProductsResponse:
     )
 
 
-@router.post("/{sku}/research", response_model=ProductResearchResponse)
+@router.post(
+    "/{sku}/research",
+    response_model=ProductResearchResponse,
+    dependencies=[Depends(require_roles("admin", "warehouse"))],
+)
 async def research_product(
     sku: str, request: ProductResearchRequest
 ) -> ProductResearchResponse:
