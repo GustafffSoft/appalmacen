@@ -94,8 +94,7 @@
         "source": "/api/**",
         "run": {
           "serviceId": "appalmacen-api",
-          "region": "us-east1",
-          "pinTag": true
+          "region": "us-east1"
         }
       },
       {
