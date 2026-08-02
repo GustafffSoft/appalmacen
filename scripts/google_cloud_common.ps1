@@ -29,3 +29,35 @@ function Assert-GcloudLogin {
     }
     Write-Host "Google Cloud account: $account"
 }
+
+function Assert-ProductionDeployment {
+    param(
+        [Parameter(Mandatory = $true)][string]$RepoRoot,
+        [Parameter(Mandatory = $true)][bool]$Confirmed,
+        [string]$ProjectId = "appalmacen-prod-5e987"
+    )
+
+    if (-not $Confirmed) {
+        throw (
+            "Production is protected. Run the command again with " +
+            "-ConfirmProduction only after the release is approved."
+        )
+    }
+
+    if ($ProjectId -ne "appalmacen-prod-5e987") {
+        throw "Unexpected production project: $ProjectId"
+    }
+
+    $branch = (& git -C $RepoRoot branch --show-current).Trim()
+    if ($LASTEXITCODE -ne 0 -or -not $branch) {
+        throw "The current Git branch could not be determined."
+    }
+    if ($branch -ne "main") {
+        throw (
+            "Production deployments are only allowed from main. " +
+            "Current branch: $branch"
+        )
+    }
+
+    Write-Warning "Confirmed production operation for $ProjectId from main."
+}

@@ -54,7 +54,7 @@ Development:
 Production:
 
 ```powershell
-.\scripts\deploy_firebase_rules.ps1 -Environment prod -IncludeStorage
+.\scripts\deploy_firebase_rules.ps1 -Environment prod -IncludeStorage -ConfirmProduction
 ```
 
 ## One-time production console setup
@@ -73,9 +73,13 @@ After Authentication is enabled, register `gustafff93s@gmail.com`. The applicati
 3. Compile/import the FastAPI application.
 4. Verify no secrets or generated logs are staged.
 5. Merge reviewed changes into `main`.
-6. Deploy the production backend with `scripts/deploy_backend_prod.ps1`.
-7. Deploy rules with `scripts/deploy_firebase_rules.ps1 -Environment prod -IncludeStorage`.
-8. Build and deploy Flutter Hosting with `scripts/deploy_web_prod.ps1`.
+6. Deploy the production backend with `scripts/deploy_backend_prod.ps1 -ConfirmProduction`.
+7. Deploy rules with `scripts/deploy_firebase_rules.ps1 -Environment prod -IncludeStorage -ConfirmProduction`.
+8. Build and deploy Flutter Hosting with `scripts/deploy_web_prod.ps1 -ConfirmProduction`.
 9. Smoke-test authentication, product reads, image upload, and one reversible inventory workflow.
+
+All production scripts stop unless the current branch is `main` and the
+`-ConfirmProduction` switch is present. Development work and testing stay on
+`codex/develop` and use the `appalmacen-5e987` Firebase project.
 
 Do not copy the development Firestore database wholesale. Production should receive only approved catalog imports or explicit migration scripts.

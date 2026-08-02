@@ -97,6 +97,10 @@ Build web de produccion:
 .\scripts\build_web_prod.ps1
 ```
 
+Los despliegues de produccion solo se permiten desde `main` y requieren el
+parametro explicito `-ConfirmProduction`. El trabajo normal permanece en
+`codex/develop` y usa el proyecto Firebase `appalmacen-5e987`.
+
 La URL predeterminada es `https://appalmacen-prod-5e987.web.app`; las rutas
 `/api/**` se envian desde Hosting a Cloud Run. Produccion nunca usa
 silenciosamente el backend de desarrollo.

@@ -2,12 +2,21 @@ param(
     [Parameter(Mandatory = $true)]
     [ValidateSet("dev", "prod")]
     [string]$Environment,
-    [switch]$IncludeStorage
+    [switch]$IncludeStorage,
+    [switch]$ConfirmProduction
 )
 
 $ErrorActionPreference = "Stop"
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $mobileDir = Join-Path $repoRoot "mobile_app"
+
+if ($Environment -eq "prod") {
+    $commonScript = Join-Path $PSScriptRoot "google_cloud_common.ps1"
+    . $commonScript
+    Assert-ProductionDeployment `
+        -RepoRoot $repoRoot `
+        -Confirmed $ConfirmProduction.IsPresent
+}
 
 if ($IncludeStorage) {
     $commonScript = Join-Path $PSScriptRoot "google_cloud_common.ps1"

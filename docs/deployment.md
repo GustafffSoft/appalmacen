@@ -24,7 +24,7 @@ ID token and the active user profile before executing protected routes.
 From the repository root:
 
 ```powershell
-.\scripts\setup_google_cloud_prod.ps1
+.\scripts\setup_google_cloud_prod.ps1 -ConfirmProduction
 ```
 
 The script enables the required APIs, creates the dedicated Cloud Run service
@@ -34,7 +34,7 @@ OpenAI secret and optionally adds its first value.
 To synchronize the existing local OpenAI key without printing it:
 
 ```powershell
-.\scripts\sync_openai_secret_prod.ps1
+.\scripts\sync_openai_secret_prod.ps1 -ConfirmProduction
 ```
 
 Do not place service-account JSON or the OpenAI key in `.env.production`, the
@@ -43,7 +43,7 @@ Docker image or the Git repository.
 ## Deploy the backend
 
 ```powershell
-.\scripts\deploy_backend_prod.ps1
+.\scripts\deploy_backend_prod.ps1 -ConfirmProduction
 ```
 
 The service is publicly reachable because Firebase Hosting must invoke it, but
@@ -53,17 +53,21 @@ application routes remain protected by Firebase ID-token validation. Only
 ## Deploy Firebase rules
 
 ```powershell
-.\scripts\deploy_firebase_rules.ps1 -Environment prod -IncludeStorage
+.\scripts\deploy_firebase_rules.ps1 -Environment prod -IncludeStorage -ConfirmProduction
 ```
 
 ## Deploy Flutter Web
 
 ```powershell
-.\scripts\deploy_web_prod.ps1
+.\scripts\deploy_web_prod.ps1 -ConfirmProduction
 ```
 
 The production build cannot fall back to a local IP address. It sends API
 requests to the Hosting origin, which forwards `/api/**` to Cloud Run.
+
+Every production operation is blocked unless it runs from the `main` branch
+and includes `-ConfirmProduction`. Normal development remains on
+`codex/develop` and uses the separate `appalmacen-5e987` Firebase project.
 
 ## Smoke test
 

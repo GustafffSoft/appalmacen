@@ -2,12 +2,18 @@ param(
     [string]$ProjectId = "appalmacen-prod-5e987",
     [string]$Region = "us-east1",
     [string]$ServiceAccountName = "appalmacen-api",
-    [string]$SecretName = "appalmacen-openai-key"
+    [string]$SecretName = "appalmacen-openai-key",
+    [switch]$ConfirmProduction
 )
 
 $ErrorActionPreference = "Stop"
+$repoRoot = Split-Path -Parent $PSScriptRoot
 $commonScript = Join-Path $PSScriptRoot "google_cloud_common.ps1"
 . $commonScript
+Assert-ProductionDeployment `
+    -RepoRoot $repoRoot `
+    -Confirmed $ConfirmProduction.IsPresent `
+    -ProjectId $ProjectId
 $gcloud = Get-GcloudCommand
 Assert-GcloudLogin -GcloudCommand $gcloud
 

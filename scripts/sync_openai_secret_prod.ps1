@@ -1,6 +1,7 @@
 param(
     [string]$ProjectId = "appalmacen-prod-5e987",
-    [string]$SecretName = "appalmacen-openai-key"
+    [string]$SecretName = "appalmacen-openai-key",
+    [switch]$ConfirmProduction
 )
 
 $ErrorActionPreference = "Stop"
@@ -8,6 +9,10 @@ $repoRoot = Split-Path -Parent $PSScriptRoot
 $envPath = Join-Path $repoRoot "backend\.env"
 $commonScript = Join-Path $PSScriptRoot "google_cloud_common.ps1"
 . $commonScript
+Assert-ProductionDeployment `
+    -RepoRoot $repoRoot `
+    -Confirmed $ConfirmProduction.IsPresent `
+    -ProjectId $ProjectId
 $gcloud = Get-GcloudCommand
 Assert-GcloudLogin -GcloudCommand $gcloud
 
