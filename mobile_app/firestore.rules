@@ -50,7 +50,11 @@ service cloud.firestore {
 
     match /products/{document=**} {
       allow read: if active();
-      allow write: if warehouse() || sales();
+      allow create: if (warehouse() || sales())
+        && request.resource.data.sku is string
+        && request.resource.data.name is string;
+      allow update: if warehouse() || sales();
+      allow delete: if admin();
     }
 
     match /orders/{document=**} {

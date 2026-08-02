@@ -197,6 +197,43 @@ class FirebaseService {
     }, SetOptions(merge: true));
   }
 
+  Future<void> deleteProductIfUnused(String sku) async {
+    final cleanSku = sku.trim().toUpperCase();
+    if (cleanSku.isEmpty) {
+      throw Exception('El SKU del producto es obligatorio.');
+    }
+
+    final palletSnapshot = await _firestore
+        .collection('warehouse_pallets')
+        .where('sku', isEqualTo: cleanSku)
+        .get();
+    final activePallets = palletSnapshot.docs.where((document) {
+      final boxes = (document.data()['boxes'] as num?)?.toInt() ?? 0;
+      return boxes > 0;
+    }).length;
+    if (activePallets > 0) {
+      throw Exception(
+        'No se puede eliminar: existen $activePallets pallet(s) con cajas de este producto.',
+      );
+    }
+
+    final productRef = _firestore.collection('products').doc(cleanSku);
+    await _firestore.runTransaction((transaction) async {
+      final productSnapshot = await transaction.get(productRef);
+      if (!productSnapshot.exists) {
+        throw Exception('El producto ya no existe.');
+      }
+      final stockQty =
+          (productSnapshot.data()?['stockQty'] as num?)?.toInt() ?? 0;
+      if (stockQty > 0) {
+        throw Exception(
+          'No se puede eliminar: el producto tiene $stockQty caja(s) en inventario.',
+        );
+      }
+      transaction.delete(productRef);
+    });
+  }
+
   Future<void> saveWarehousePalletLocation({
     required String palletId,
     required String sku,

@@ -8,7 +8,9 @@ import '../services/firebase_service.dart';
 import 'add_product_page.dart';
 
 class ProductsPage extends StatefulWidget {
-  const ProductsPage({super.key});
+  const ProductsPage({super.key, this.canDeleteProducts = false});
+
+  final bool canDeleteProducts;
 
   @override
   State<ProductsPage> createState() => _ProductsPageState();
@@ -285,8 +287,10 @@ class _ProductsPageState extends State<ProductsPage> {
                       onTap: () {
                         Navigator.of(context).push(
                           MaterialPageRoute(
-                            builder: (_) =>
-                                AddProductPage(initialProduct: data),
+                            builder: (_) => AddProductPage(
+                              initialProduct: data,
+                              canDelete: widget.canDeleteProducts,
+                            ),
                           ),
                         );
                       },

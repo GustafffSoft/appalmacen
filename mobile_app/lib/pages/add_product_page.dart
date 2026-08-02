@@ -4,9 +4,14 @@ import 'package:provider/provider.dart';
 import '../services/firebase_service.dart';
 
 class AddProductPage extends StatefulWidget {
-  const AddProductPage({super.key, this.initialProduct});
+  const AddProductPage({
+    super.key,
+    this.initialProduct,
+    this.canDelete = false,
+  });
 
   final Map<String, dynamic>? initialProduct;
+  final bool canDelete;
 
   @override
   State<AddProductPage> createState() => _AddProductPageState();
@@ -28,6 +33,7 @@ class _AddProductPageState extends State<AddProductPage> {
   String _productStatus = 'activo';
 
   bool _saving = false;
+  bool _deleting = false;
   String? _message;
 
   bool get _isEditing => widget.initialProduct != null;
@@ -165,6 +171,83 @@ class _AddProductPageState extends State<AddProductPage> {
           _saving = false;
         });
       }
+    }
+  }
+
+  Future<bool> _confirmDeletion(String sku, String name) async {
+    final confirmationController = TextEditingController();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Eliminar producto'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('$sku - $name'),
+              const SizedBox(height: 12),
+              const Text(
+                'Esta accion es permanente. Solo se permitira si no quedan cajas ni pallets activos.',
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: confirmationController,
+                autofocus: true,
+                textCapitalization: TextCapitalization.characters,
+                decoration: InputDecoration(
+                  labelText: 'Escribe $sku para confirmar',
+                  border: const OutlineInputBorder(),
+                ),
+                onChanged: (_) => setDialogState(() {}),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('Cancelar'),
+            ),
+            FilledButton.icon(
+              onPressed: confirmationController.text.trim().toUpperCase() == sku
+                  ? () => Navigator.of(dialogContext).pop(true)
+                  : null,
+              icon: const Icon(Icons.delete_outline),
+              label: const Text('Eliminar'),
+            ),
+          ],
+        ),
+      ),
+    );
+    confirmationController.dispose();
+    return confirmed == true;
+  }
+
+  Future<void> _deleteProduct() async {
+    if (!_isEditing || !widget.canDelete || _deleting) return;
+    final sku = _skuController.text.trim().toUpperCase();
+    final name = _nameController.text.trim();
+    if (!await _confirmDeletion(sku, name)) return;
+    if (!mounted) return;
+    final firebaseService = context.read<FirebaseService>();
+
+    setState(() {
+      _deleting = true;
+      _message = 'Eliminando producto...';
+    });
+    try {
+      await firebaseService.deleteProductIfUnused(sku);
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Producto $sku eliminado')));
+      Navigator.of(context).pop();
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _message = 'No se pudo eliminar: $error');
+    } finally {
+      if (mounted) setState(() => _deleting = false);
     }
   }
 
@@ -482,6 +565,19 @@ class _AddProductPageState extends State<AddProductPage> {
     return Scaffold(
       appBar: AppBar(
         title: Text(_isEditing ? 'Editar Producto' : 'Nuevo Producto'),
+        actions: [
+          if (_isEditing && widget.canDelete)
+            IconButton(
+              tooltip: 'Eliminar producto',
+              onPressed: _saving || _deleting ? null : _deleteProduct,
+              icon: _deleting
+                  ? const SizedBox.square(
+                      dimension: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.delete_outline),
+            ),
+        ],
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),

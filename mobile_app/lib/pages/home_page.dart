@@ -123,7 +123,9 @@ class _HomePageState extends State<HomePage> {
                         Navigator.of(context).pop();
                         Navigator.of(context).push(
                           MaterialPageRoute(
-                            builder: (_) => const ProductsPage(),
+                            builder: (_) => ProductsPage(
+                              canDeleteProducts: profile.isAdmin,
+                            ),
                           ),
                         );
                       },
