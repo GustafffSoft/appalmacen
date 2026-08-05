@@ -752,13 +752,13 @@ class _WarehouseRackPageState extends State<WarehouseRackPage> {
           Material(
             color: Theme.of(context).colorScheme.surface,
             child: SizedBox(
-              height: 48,
+              height: 40,
               child: Padding(
-                padding: const EdgeInsets.only(left: 12, right: 4),
+                padding: const EdgeInsets.only(left: 10, right: 2),
                 child: Row(
                   children: [
-                    const Icon(Icons.view_module_outlined, size: 20),
-                    const SizedBox(width: 10),
+                    const Icon(Icons.view_module_outlined, size: 18),
+                    const SizedBox(width: 8),
                     const Expanded(
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
@@ -769,7 +769,7 @@ class _WarehouseRackPageState extends State<WarehouseRackPage> {
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
-                              fontSize: 14,
+                              fontSize: 13,
                               fontWeight: FontWeight.w600,
                             ),
                           ),
@@ -778,7 +778,7 @@ class _WarehouseRackPageState extends State<WarehouseRackPage> {
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
-                              fontSize: 10,
+                              fontSize: 9,
                               color: Colors.black54,
                             ),
                           ),
@@ -790,10 +790,10 @@ class _WarehouseRackPageState extends State<WarehouseRackPage> {
                       onPressed: () => _showRackDialog(context),
                       visualDensity: VisualDensity.compact,
                       constraints: const BoxConstraints.tightFor(
-                        width: 40,
-                        height: 40,
+                        width: 36,
+                        height: 36,
                       ),
-                      icon: const Icon(Icons.add, size: 21),
+                      icon: const Icon(Icons.add, size: 20),
                     ),
                   ],
                 ),
@@ -898,7 +898,7 @@ class _WarehouseRackPageState extends State<WarehouseRackPage> {
                 return Column(
                   children: [
                     SizedBox(
-                      height: unassigned.isEmpty ? 198 : 235,
+                      height: unassigned.isEmpty ? 188 : 231,
                       child: _PendingPalletsPanel(
                         pallets: unassigned,
                         query: _query,
@@ -1880,7 +1880,7 @@ class _PendingPalletsPanel extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(12, 10, 12, 6),
+          padding: const EdgeInsets.fromLTRB(12, 6, 12, 4),
           child: TextField(
             onChanged: onQueryChanged,
             decoration: const InputDecoration(

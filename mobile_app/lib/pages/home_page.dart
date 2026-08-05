@@ -32,13 +32,28 @@ class _HomePageState extends State<HomePage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('appalmacen'),
+        toolbarHeight: 44,
+        leadingWidth: 44,
+        titleSpacing: 6,
+        leading: Builder(
+          builder: (context) => IconButton(
+            tooltip: 'Abrir menu',
+            onPressed: Scaffold.of(context).openDrawer,
+            visualDensity: VisualDensity.compact,
+            constraints: const BoxConstraints.tightFor(width: 40, height: 40),
+            icon: const Icon(Icons.menu, size: 22),
+          ),
+        ),
+        title: const Text('appalmacen', style: TextStyle(fontSize: 20)),
         actions: [
           IconButton(
             tooltip: 'Cerrar sesion',
             onPressed: context.read<AuthService>().signOut,
-            icon: const Icon(Icons.logout),
+            visualDensity: VisualDensity.compact,
+            constraints: const BoxConstraints.tightFor(width: 40, height: 40),
+            icon: const Icon(Icons.logout, size: 21),
           ),
+          const SizedBox(width: 2),
         ],
       ),
       drawer: Drawer(
