@@ -224,6 +224,7 @@ class _WarehouseRackPageState extends State<WarehouseRackPage> {
     BuildContext context,
     List<QueryDocumentSnapshot<Map<String, dynamic>>> productDocs,
   ) async {
+    final productSearchController = TextEditingController();
     final quantityController = TextEditingController();
     var productQuery = '';
     var productQueryText = '';
@@ -238,25 +239,29 @@ class _WarehouseRackPageState extends State<WarehouseRackPage> {
       builder: (dialogContext) {
         return StatefulBuilder(
           builder: (context, setDialogState) {
-            final filteredProducts = productDocs
-                .where((doc) {
-                  final data = doc.data();
-                  final sku = data['sku']?.toString() ?? doc.id;
-                  if (productQuery.isEmpty) return true;
-                  final name = (data['name']?.toString() ?? '').toLowerCase();
-                  final secondName = (data['secondName']?.toString() ?? '')
-                      .toLowerCase();
-                  final alternateSkus =
-                      (data['alternateSkus'] as List<dynamic>? ?? [])
-                          .map((item) => item.toString().toLowerCase())
-                          .join(' ');
-                  return name.contains(productQuery) ||
-                      secondName.contains(productQuery) ||
-                      alternateSkus.contains(productQuery) ||
-                      sku.toLowerCase().contains(productQuery);
-                })
-                .take(12)
-                .toList();
+            final filteredProducts =
+                selectedProduct != null || productQuery.isEmpty
+                ? <QueryDocumentSnapshot<Map<String, dynamic>>>[]
+                : productDocs
+                      .where((doc) {
+                        final data = doc.data();
+                        final sku = data['sku']?.toString() ?? doc.id;
+                        final name = (data['name']?.toString() ?? '')
+                            .toLowerCase();
+                        final secondName =
+                            (data['secondName']?.toString() ?? '')
+                                .toLowerCase();
+                        final alternateSkus =
+                            (data['alternateSkus'] as List<dynamic>? ?? [])
+                                .map((item) => item.toString().toLowerCase())
+                                .join(' ');
+                        return name.contains(productQuery) ||
+                            secondName.contains(productQuery) ||
+                            alternateSkus.contains(productQuery) ||
+                            sku.toLowerCase().contains(productQuery);
+                      })
+                      .take(2)
+                      .toList();
 
             return AlertDialog(
               title: const Text('Dar entrada a pallet'),
@@ -267,124 +272,173 @@ class _WarehouseRackPageState extends State<WarehouseRackPage> {
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      TextField(
-                        decoration: const InputDecoration(
-                          labelText: 'Buscar producto por nombre o codigo',
-                          prefixIcon: Icon(Icons.search),
-                        ),
-                        onChanged: (value) {
-                          setDialogState(() {
-                            productQueryText = value.trim();
-                            productQuery = productQueryText.toLowerCase();
-                          });
-                        },
-                      ),
-                      const SizedBox(height: 8),
-                      Container(
-                        constraints: const BoxConstraints(maxHeight: 220),
-                        decoration: BoxDecoration(
-                          border: Border.all(color: Colors.black12),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child:
-                            filteredProducts.isEmpty && productQuery.isNotEmpty
-                            ? ListTile(
-                                leading: const Icon(Icons.add_box_outlined),
-                                title: const Text('Crear producto'),
-                                subtitle: Text(productQueryText),
-                                trailing: creatingProduct
-                                    ? const SizedBox(
-                                        width: 20,
-                                        height: 20,
-                                        child: CircularProgressIndicator(
-                                          strokeWidth: 2,
-                                        ),
-                                      )
-                                    : const Icon(Icons.add),
-                                onTap: creatingProduct
-                                    ? null
-                                    : () async {
-                                        setDialogState(
-                                          () => creatingProduct = true,
-                                        );
-                                        try {
-                                          final product = await context
-                                              .read<FirebaseService>()
-                                              .createMinimalProduct(
-                                                name: productQueryText,
-                                              );
-                                          setDialogState(() {
-                                            selectedProduct = product;
-                                            selectedSku = product['sku']
-                                                .toString();
-                                            creatingProduct = false;
-                                          });
-                                        } catch (error) {
-                                          setDialogState(
-                                            () => creatingProduct = false,
-                                          );
-                                          if (context.mounted) {
-                                            ScaffoldMessenger.of(
-                                              context,
-                                            ).showSnackBar(
-                                              SnackBar(
-                                                content: Text(
-                                                  'No se pudo crear: $error',
-                                                ),
-                                              ),
-                                            );
-                                          }
-                                        }
-                                      },
-                              )
-                            : ListView.builder(
-                                shrinkWrap: true,
-                                itemCount: filteredProducts.length,
-                                itemBuilder: (context, index) {
-                                  final doc = filteredProducts[index];
-                                  final data = doc.data();
-                                  final sku = data['sku']?.toString() ?? doc.id;
-                                  final name =
-                                      data['name']?.toString() ?? 'Producto';
-                                  final selected = selectedSku == sku;
-                                  return ListTile(
-                                    selected: selected,
-                                    dense: true,
-                                    title: Text('$sku - $name'),
-                                    trailing: selected
-                                        ? const Icon(Icons.check_circle)
-                                        : null,
-                                    onTap: () {
-                                      setDialogState(() {
-                                        selectedProduct = data;
-                                        selectedSku = sku;
-                                      });
-                                    },
-                                  );
-                                },
-                              ),
-                      ),
-                      if (selectedProduct != null) ...[
-                        const SizedBox(height: 8),
-                        ListTile(
-                          dense: true,
-                          leading: const Icon(Icons.check_circle),
-                          title: Text(
-                            selectedProduct!['name']?.toString() ?? 'Producto',
+                      if (selectedProduct == null) ...[
+                        TextField(
+                          controller: productSearchController,
+                          decoration: const InputDecoration(
+                            labelText: 'Buscar producto',
+                            hintText: 'Nombre o codigo',
+                            prefixIcon: Icon(Icons.search),
+                            border: OutlineInputBorder(),
                           ),
-                          subtitle: Text(selectedSku),
+                          onChanged: (value) {
+                            setDialogState(() {
+                              productQueryText = value.trim();
+                              productQuery = productQueryText.toLowerCase();
+                            });
+                          },
                         ),
-                      ],
+                        if (productQuery.isNotEmpty) ...[
+                          const SizedBox(height: 8),
+                          Container(
+                            constraints: const BoxConstraints(maxHeight: 132),
+                            decoration: BoxDecoration(
+                              border: Border.all(color: Colors.black12),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: filteredProducts.isEmpty
+                                ? ListTile(
+                                    leading: const Icon(Icons.add_box_outlined),
+                                    title: const Text('Crear producto'),
+                                    subtitle: Text(productQueryText),
+                                    trailing: creatingProduct
+                                        ? const SizedBox(
+                                            width: 20,
+                                            height: 20,
+                                            child: CircularProgressIndicator(
+                                              strokeWidth: 2,
+                                            ),
+                                          )
+                                        : const Icon(Icons.add),
+                                    onTap: creatingProduct
+                                        ? null
+                                        : () async {
+                                            setDialogState(
+                                              () => creatingProduct = true,
+                                            );
+                                            try {
+                                              final product = await context
+                                                  .read<FirebaseService>()
+                                                  .createMinimalProduct(
+                                                    name: productQueryText,
+                                                  );
+                                              setDialogState(() {
+                                                selectedProduct = product;
+                                                selectedSku = product['sku']
+                                                    .toString();
+                                                productQuery = '';
+                                                productQueryText = '';
+                                                productSearchController.clear();
+                                                creatingProduct = false;
+                                              });
+                                            } catch (error) {
+                                              setDialogState(
+                                                () => creatingProduct = false,
+                                              );
+                                              if (context.mounted) {
+                                                ScaffoldMessenger.of(
+                                                  context,
+                                                ).showSnackBar(
+                                                  SnackBar(
+                                                    content: Text(
+                                                      'No se pudo crear: $error',
+                                                    ),
+                                                  ),
+                                                );
+                                              }
+                                            }
+                                          },
+                                  )
+                                : ListView.builder(
+                                    shrinkWrap: true,
+                                    itemCount: filteredProducts.length,
+                                    itemBuilder: (context, index) {
+                                      final doc = filteredProducts[index];
+                                      final data = doc.data();
+                                      final sku =
+                                          data['sku']?.toString() ?? doc.id;
+                                      final name =
+                                          data['name']?.toString() ??
+                                          'Producto';
+                                      return ListTile(
+                                        dense: true,
+                                        title: Text(
+                                          name,
+                                          maxLines: 2,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                        onTap: () {
+                                          setDialogState(() {
+                                            selectedProduct = data;
+                                            selectedSku = sku;
+                                            productQuery = '';
+                                            productQueryText = '';
+                                            productSearchController.clear();
+                                          });
+                                        },
+                                      );
+                                    },
+                                  ),
+                          ),
+                        ],
+                      ] else
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.fromLTRB(12, 8, 4, 8),
+                          decoration: BoxDecoration(
+                            border: Border.all(color: Colors.black26),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Row(
+                            children: [
+                              const Icon(Icons.check_circle, size: 22),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Text(
+                                  selectedProduct!['name']?.toString() ??
+                                      'Producto',
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                              IconButton(
+                                tooltip: 'Cambiar producto',
+                                onPressed: () {
+                                  setDialogState(() {
+                                    selectedProduct = null;
+                                    selectedSku = '';
+                                    productQuery = '';
+                                    productQueryText = '';
+                                    productSearchController.clear();
+                                  });
+                                },
+                                icon: const Icon(Icons.close),
+                              ),
+                            ],
+                          ),
+                        ),
                       const SizedBox(height: 12),
+                      const Text(
+                        'Cantidad de cajas en este pallet',
+                        style: TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                      const SizedBox(height: 6),
                       TextField(
                         controller: quantityController,
-                        keyboardType: TextInputType.number,
+                        keyboardType: const TextInputType.numberWithOptions(
+                          decimal: false,
+                          signed: false,
+                        ),
                         inputFormatters: [
                           FilteringTextInputFormatter.digitsOnly,
                         ],
                         decoration: const InputDecoration(
-                          labelText: 'Cantidad de cajas en este pallet',
+                          hintText: '0',
                           prefixIcon: Icon(Icons.numbers),
+                          border: OutlineInputBorder(),
                         ),
                       ),
                       const SizedBox(height: 12),
@@ -511,6 +565,8 @@ class _WarehouseRackPageState extends State<WarehouseRackPage> {
         );
       },
     );
+    productSearchController.dispose();
+    quantityController.dispose();
   }
 
   Future<void> _deleteRack(
