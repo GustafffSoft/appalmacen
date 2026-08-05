@@ -67,14 +67,9 @@ List<_RackPosition> _positionsForRack(Map<String, dynamic> rack) {
 }
 
 class WarehouseRackPage extends StatefulWidget {
-  const WarehouseRackPage({
-    super.key,
-    this.embedded = false,
-    this.onMoveModeChanged,
-  });
+  const WarehouseRackPage({super.key, this.embedded = false});
 
   final bool embedded;
-  final ValueChanged<bool>? onMoveModeChanged;
 
   @override
   State<WarehouseRackPage> createState() => _WarehouseRackPageState();
@@ -83,7 +78,6 @@ class WarehouseRackPage extends StatefulWidget {
 class _WarehouseRackPageState extends State<WarehouseRackPage> {
   String _query = '';
   List<Map<String, dynamic>> _currentRacks = [];
-  Map<String, dynamic>? _selectedPalletToMove;
 
   int _toInt(dynamic value) {
     if (value is num) return value.toInt();
@@ -696,40 +690,6 @@ class _WarehouseRackPageState extends State<WarehouseRackPage> {
     }
   }
 
-  void _selectPalletToMove(Map<String, dynamic> pallet) {
-    final enteringMoveMode = _selectedPalletToMove == null;
-    debugPrint(
-      '[RackMove] Selected pallet=${pallet['palletId'] ?? pallet['sku'] ?? ''} '
-      'entering=$enteringMoveMode embedded=${widget.embedded}',
-    );
-    setState(() => _selectedPalletToMove = pallet);
-    if (enteringMoveMode) {
-      widget.onMoveModeChanged?.call(true);
-    }
-    final name = pallet['productName']?.toString() ?? 'pallet';
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Pallet seleccionado: $name. Toca una posicion destino.'),
-        duration: const Duration(seconds: 2),
-      ),
-    );
-  }
-
-  void _clearSelectedPallet() {
-    if (_selectedPalletToMove == null) return;
-    debugPrint('[RackMove] Leaving move mode');
-    setState(() => _selectedPalletToMove = null);
-    widget.onMoveModeChanged?.call(false);
-  }
-
-  Future<void> _movePalletOutside(
-    BuildContext context,
-    Map<String, dynamic> pallet,
-  ) async {
-    await _clearPalletLocation(context, pallet);
-    if (mounted) _clearSelectedPallet();
-  }
-
   Future<void> _depletePallet(
     BuildContext context,
     Map<String, dynamic> pallet,
@@ -787,7 +747,6 @@ class _WarehouseRackPageState extends State<WarehouseRackPage> {
   Widget build(BuildContext context) {
     final body = _buildRackBody(context);
     if (widget.embedded) {
-      if (_selectedPalletToMove != null) return body;
       return Column(
         children: [
           Material(
@@ -848,19 +807,17 @@ class _WarehouseRackPageState extends State<WarehouseRackPage> {
     }
 
     return Scaffold(
-      appBar: _selectedPalletToMove == null
-          ? AppBar(
-              title: const Text('Mapa de Racks'),
-              actions: [
-                IconButton(
-                  tooltip: 'Agregar rack',
-                  onPressed: () => _showRackDialog(context),
-                  icon: const Icon(Icons.add),
-                ),
-              ],
-            )
-          : null,
-      body: _selectedPalletToMove == null ? body : SafeArea(child: body),
+      appBar: AppBar(
+        title: const Text('Mapa de Racks'),
+        actions: [
+          IconButton(
+            tooltip: 'Agregar rack',
+            onPressed: () => _showRackDialog(context),
+            icon: const Icon(Icons.add),
+          ),
+        ],
+      ),
+      body: body,
     );
   }
 
@@ -908,19 +865,16 @@ class _WarehouseRackPageState extends State<WarehouseRackPage> {
                 _currentRacks = racks;
                 final palletDocs = palletSnapshot.data!.docs;
                 final placedByLocation = _placedByLocation(palletDocs);
-                final moveMode = _selectedPalletToMove != null;
-                final filteredRacks = moveMode
-                    ? racks
-                    : <Map<String, dynamic>>[
-                        for (var index = 0; index < racks.length; index++)
-                          if (_rackHasQueryMatch(
-                            racks[index],
-                            _rackNumberFromIdOrName(racks[index], index + 1),
-                            placedByLocation,
-                            _query,
-                          ))
-                            racks[index],
-                      ];
+                final filteredRacks = <Map<String, dynamic>>[
+                  for (var index = 0; index < racks.length; index++)
+                    if (_rackHasQueryMatch(
+                      racks[index],
+                      _rackNumberFromIdOrName(racks[index], index + 1),
+                      placedByLocation,
+                      _query,
+                    ))
+                      racks[index],
+                ];
                 final products = productSnapshot.data!.docs;
                 final unassigned =
                     palletDocs
@@ -943,78 +897,41 @@ class _WarehouseRackPageState extends State<WarehouseRackPage> {
 
                 return Column(
                   children: [
-                    if (moveMode)
-                      Material(
-                        color: Colors.white,
-                        elevation: 2,
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 6,
-                          ),
-                          child: Row(
-                            children: [
-                              Expanded(
-                                child: OutlinedButton.icon(
-                                  onPressed: () => _movePalletOutside(
-                                    context,
-                                    _selectedPalletToMove!,
-                                  ),
-                                  icon: const Icon(Icons.outbox_outlined),
-                                  label: const Text('Sacar del rack'),
-                                ),
-                              ),
-                              const SizedBox(width: 6),
-                              IconButton(
-                                tooltip: 'Cancelar movimiento',
-                                onPressed: _clearSelectedPallet,
-                                icon: const Icon(Icons.close),
-                              ),
-                            ],
-                          ),
-                        ),
-                      )
-                    else ...[
-                      SizedBox(
-                        height: unassigned.isEmpty ? 198 : 235,
-                        child: _PendingPalletsPanel(
-                          pallets: unassigned,
-                          query: _query,
-                          onAddPallet: () =>
-                              _showPalletEntryDialog(context, products),
-                          onDropOutside: (pallet) =>
-                              _clearPalletLocation(context, pallet),
-                          onSelectPallet: _selectPalletToMove,
-                          onDepletePallet: (pallet) =>
-                              _depletePallet(context, pallet),
-                          onQueryChanged: (value) {
-                            setState(() => _query = value.trim().toLowerCase());
-                          },
-                        ),
+                    SizedBox(
+                      height: unassigned.isEmpty ? 198 : 235,
+                      child: _PendingPalletsPanel(
+                        pallets: unassigned,
+                        query: _query,
+                        onAddPallet: () =>
+                            _showPalletEntryDialog(context, products),
+                        onDropOutside: (pallet) =>
+                            _clearPalletLocation(context, pallet),
+                        onDepletePallet: (pallet) =>
+                            _depletePallet(context, pallet),
+                        onQueryChanged: (value) {
+                          setState(() => _query = value.trim().toLowerCase());
+                        },
                       ),
-                      const Divider(height: 1),
-                    ],
+                    ),
+                    const Divider(height: 1),
                     Expanded(
                       child: _RackMap(
                         racks: filteredRacks,
                         placedByLocation: placedByLocation,
-                        query: moveMode ? '' : _query,
-                        selectedPallet: _selectedPalletToMove,
+                        query: _query,
                         onEditRack: (rack) =>
                             _showRackDialog(context, rack: rack),
                         onDeleteRack: (rack) => _deleteRack(context, rack),
-                        onSelectPallet: _selectPalletToMove,
                         onDepletePallet: (pallet) =>
                             _depletePallet(context, pallet),
                         onAccept: (pallet, rackId, level, position) async {
-                          final moved = await _placePallet(
+                          await _placePallet(
                             context,
                             pallet: pallet,
                             rackId: rackId,
                             level: level,
                             position: position,
                           );
-                          if (moved && mounted) _clearSelectedPallet();
                         },
                       ),
                     ),
@@ -1034,10 +951,8 @@ class _RackMap extends StatefulWidget {
     required this.racks,
     required this.placedByLocation,
     required this.query,
-    required this.selectedPallet,
     required this.onEditRack,
     required this.onDeleteRack,
-    required this.onSelectPallet,
     required this.onDepletePallet,
     required this.onAccept,
   });
@@ -1045,10 +960,8 @@ class _RackMap extends StatefulWidget {
   final List<Map<String, dynamic>> racks;
   final Map<String, List<Map<String, dynamic>>> placedByLocation;
   final String query;
-  final Map<String, dynamic>? selectedPallet;
   final ValueChanged<Map<String, dynamic>> onEditRack;
   final ValueChanged<Map<String, dynamic>> onDeleteRack;
-  final ValueChanged<Map<String, dynamic>> onSelectPallet;
   final ValueChanged<Map<String, dynamic>> onDepletePallet;
   final Future<void> Function(
     Map<String, dynamic> pallet,
@@ -1168,7 +1081,6 @@ class _RackMapState extends State<_RackMap> {
         ),
       );
     }
-    final moveMode = widget.selectedPallet != null;
     final selectedRackId =
         widget.racks.any(
           (rack) => rack['rackId']?.toString() == _selectedRackId,
@@ -1187,24 +1099,22 @@ class _RackMapState extends State<_RackMap> {
     final positions = _positionsForRack(rack);
     final sections = <_RackSectionInfo>[];
     final slivers = <Widget>[
-      SliverToBoxAdapter(child: SizedBox(height: moveMode ? 4 : 12)),
+      const SliverToBoxAdapter(child: SizedBox(height: 12)),
     ];
-    if (widget.selectedPallet == null) {
-      slivers.add(
-        SliverToBoxAdapter(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            child: _RackControls(
-              rackName: rackName,
-              levelCount: levels.length,
-              positionCount: positions.length,
-              onEdit: () => widget.onEditRack(rack),
-              onDelete: () => widget.onDeleteRack(rack),
-            ),
+    slivers.add(
+      SliverToBoxAdapter(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          child: _RackControls(
+            rackName: rackName,
+            levelCount: levels.length,
+            positionCount: positions.length,
+            onEdit: () => widget.onEditRack(rack),
+            onDelete: () => widget.onDeleteRack(rack),
           ),
         ),
-      );
-    }
+      ),
+    );
     for (final level in levels) {
       final hasVisiblePosition = positions.any((position) {
         if (widget.query.isEmpty) return true;
@@ -1252,18 +1162,12 @@ class _RackMapState extends State<_RackMap> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                if (!moveMode)
-                  _RackSectionTitle(
-                    title: section.title,
-                    subtitle: section.subtitle,
-                  ),
+                _RackSectionTitle(
+                  title: section.title,
+                  subtitle: section.subtitle,
+                ),
                 Padding(
-                  padding: EdgeInsets.fromLTRB(
-                    moveMode ? 6 : 12,
-                    moveMode ? 3 : 0,
-                    moveMode ? 6 : 12,
-                    moveMode ? 3 : 12,
-                  ),
+                  padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
                   child: _RackLevelGrid(
                     rackId: rackId,
                     rackName: rackName,
@@ -1272,8 +1176,6 @@ class _RackMapState extends State<_RackMap> {
                     positions: positions,
                     placedByLocation: widget.placedByLocation,
                     query: widget.query,
-                    selectedPallet: widget.selectedPallet,
-                    onSelectPallet: widget.onSelectPallet,
                     onDepletePallet: widget.onDepletePallet,
                     onAccept: widget.onAccept,
                   ),
@@ -1284,7 +1186,7 @@ class _RackMapState extends State<_RackMap> {
         ),
       );
     }
-    slivers.add(SliverToBoxAdapter(child: SizedBox(height: moveMode ? 4 : 12)));
+    slivers.add(const SliverToBoxAdapter(child: SizedBox(height: 12)));
 
     _visibleSections = sections;
     if (_visibleSections.isNotEmpty && _currentTitle.isEmpty) {
@@ -1300,8 +1202,7 @@ class _RackMapState extends State<_RackMap> {
           selectedRackId: selectedRackId,
           onSelected: _selectRack,
         ),
-        if (!moveMode)
-          _CurrentRackHeader(title: _currentTitle, subtitle: _currentSubtitle),
+        _CurrentRackHeader(title: _currentTitle, subtitle: _currentSubtitle),
         Expanded(
           child: NotificationListener<ScrollNotification>(
             onNotification: (_) {
@@ -1562,8 +1463,6 @@ class _RackLevelGrid extends StatelessWidget {
     required this.positions,
     required this.placedByLocation,
     required this.query,
-    required this.selectedPallet,
-    required this.onSelectPallet,
     required this.onDepletePallet,
     required this.onAccept,
   });
@@ -1575,8 +1474,6 @@ class _RackLevelGrid extends StatelessWidget {
   final List<_RackPosition> positions;
   final Map<String, List<Map<String, dynamic>>> placedByLocation;
   final String query;
-  final Map<String, dynamic>? selectedPallet;
-  final ValueChanged<Map<String, dynamic>> onSelectPallet;
   final ValueChanged<Map<String, dynamic>> onDepletePallet;
   final Future<void> Function(
     Map<String, dynamic> pallet,
@@ -1619,17 +1516,16 @@ class _RackLevelGrid extends StatelessWidget {
 
     final hasVisiblePosition = positions.any(positionMatches);
     if (!hasVisiblePosition) return const SizedBox.shrink();
-    final moveMode = selectedPallet != null;
 
     return Card(
       margin: EdgeInsets.zero,
       child: Padding(
-        padding: EdgeInsets.all(moveMode ? 5 : 10),
+        padding: const EdgeInsets.all(10),
         child: GridView.count(
           crossAxisCount: positions.length < 4 ? 4 : positions.length,
-          childAspectRatio: moveMode ? 1.08 : 1.25,
-          crossAxisSpacing: moveMode ? 5 : 8,
-          mainAxisSpacing: moveMode ? 5 : 8,
+          childAspectRatio: 1.25,
+          crossAxisSpacing: 8,
+          mainAxisSpacing: 8,
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
           children: positions.map((position) {
@@ -1651,12 +1547,9 @@ class _RackLevelGrid extends StatelessWidget {
             ].map((value) => value.toLowerCase()).join(' ').contains(query);
             return _RackSlot(
               rackId: rackId,
-              rackName: rackName,
-              rackNumber: rackNumber,
               level: level,
               position: position,
               positionCode: positionCode,
-              locationCode: locationCode,
               pallets: query.isEmpty || visiblePositionMatches
                   ? pallets
                   : pallets.where((pallet) {
@@ -1676,8 +1569,6 @@ class _RackLevelGrid extends StatelessWidget {
                               .join(' ');
                       return values.contains(query);
                     }).toList(),
-              selectedPallet: selectedPallet,
-              onSelectPallet: onSelectPallet,
               onDepletePallet: onDepletePallet,
               onAccept: onAccept,
             );
@@ -1691,29 +1582,19 @@ class _RackLevelGrid extends StatelessWidget {
 class _RackSlot extends StatelessWidget {
   const _RackSlot({
     required this.rackId,
-    required this.rackName,
-    required this.rackNumber,
     required this.level,
     required this.position,
     required this.positionCode,
-    required this.locationCode,
     required this.pallets,
-    required this.selectedPallet,
-    required this.onSelectPallet,
     required this.onDepletePallet,
     required this.onAccept,
   });
 
   final String rackId;
-  final String rackName;
-  final int rackNumber;
   final int level;
   final _RackPosition position;
   final String positionCode;
-  final String locationCode;
   final List<Map<String, dynamic>> pallets;
-  final Map<String, dynamic>? selectedPallet;
-  final ValueChanged<Map<String, dynamic>> onSelectPallet;
   final ValueChanged<Map<String, dynamic>> onDepletePallet;
   final Future<void> Function(
     Map<String, dynamic> pallet,
@@ -1731,98 +1612,40 @@ class _RackSlot extends StatelessWidget {
       },
       builder: (context, candidateData, rejectedData) {
         final active = candidateData.isNotEmpty;
-        final tapMoveActive = selectedPallet != null;
-        return GestureDetector(
-          onTap: tapMoveActive
-              ? () => onAccept(selectedPallet!, rackId, level, position.code)
-              : null,
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 140),
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: active
-                  ? const Color(0xFFE8F0FE)
-                  : tapMoveActive
-                  ? const Color(0xFFFFF9E6)
-                  : const Color(0xFFF8F8F8),
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(
-                color: active || tapMoveActive ? Colors.black : Colors.black26,
-                width: active || tapMoveActive ? 2 : 1,
-              ),
+        return AnimatedContainer(
+          duration: const Duration(milliseconds: 140),
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: const Color(0xFFF8F8F8),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: active ? Colors.black : Colors.black26,
+              width: active ? 2 : 1,
             ),
-            child: tapMoveActive
-                ? _MoveRackDestination(
-                    rackName: rackName,
-                    level: level,
-                    positionCode: positionCode,
-                  )
-                : active
-                ? _RackDropPreview(
-                    position: position,
-                    positionCode: positionCode,
-                    locationCode: locationCode,
-                  )
-                : pallets.isEmpty
-                ? Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        positionCode,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(fontWeight: FontWeight.bold),
-                      ),
-                      const Spacer(),
-                      const Text(
-                        'Vacia',
-                        style: TextStyle(fontSize: 10, color: Colors.black54),
-                      ),
-                    ],
-                  )
-                : _RackSlotPallets(
-                    pallets: pallets,
-                    onSelectPallet: onSelectPallet,
-                    onDepletePallet: onDepletePallet,
-                  ),
           ),
+          child: pallets.isEmpty
+              ? Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      positionCode,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    const Spacer(),
+                    const Text(
+                      'Vacia',
+                      style: TextStyle(fontSize: 10, color: Colors.black54),
+                    ),
+                  ],
+                )
+              : _RackSlotPallets(
+                  pallets: pallets,
+                  onDepletePallet: onDepletePallet,
+                ),
         );
       },
-    );
-  }
-}
-
-class _MoveRackDestination extends StatelessWidget {
-  const _MoveRackDestination({
-    required this.rackName,
-    required this.level,
-    required this.positionCode,
-  });
-
-  final String rackName;
-  final int level;
-  final String positionCode;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        Text(
-          positionCode,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-        ),
-        const SizedBox(height: 3),
-        Text(
-          '$rackName · Piso $level',
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
-          textAlign: TextAlign.center,
-          style: const TextStyle(fontSize: 9, color: Colors.black54),
-        ),
-      ],
     );
   }
 }
@@ -1830,12 +1653,10 @@ class _MoveRackDestination extends StatelessWidget {
 class _RackSlotPallets extends StatelessWidget {
   const _RackSlotPallets({
     required this.pallets,
-    required this.onSelectPallet,
     required this.onDepletePallet,
   });
 
   final List<Map<String, dynamic>> pallets;
-  final ValueChanged<Map<String, dynamic>> onSelectPallet;
   final ValueChanged<Map<String, dynamic>> onDepletePallet;
 
   @override
@@ -1848,44 +1669,46 @@ class _RackSlotPallets extends StatelessWidget {
           children: [
             for (var index = 0; index < visiblePallets.length; index++)
               Expanded(
-                child: GestureDetector(
-                  onLongPress: () => onSelectPallet(visiblePallets[index]),
-                  onDoubleTap: () => onDepletePallet(visiblePallets[index]),
-                  child: Container(
-                    width: double.infinity,
-                    padding: EdgeInsets.fromLTRB(
-                      4,
-                      2,
-                      hiddenCount > 0 ? 24 : 4,
-                      2,
-                    ),
-                    decoration: BoxDecoration(
-                      border: index < visiblePallets.length - 1
-                          ? const Border(
-                              bottom: BorderSide(color: Colors.black12),
-                            )
-                          : null,
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Text(
-                          visiblePallets[index]['sku']?.toString() ?? '',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            fontSize: 10,
-                            fontWeight: FontWeight.bold,
+                child: _PalletLongPressDraggable(
+                  pallet: visiblePallets[index],
+                  child: GestureDetector(
+                    onDoubleTap: () => onDepletePallet(visiblePallets[index]),
+                    child: Container(
+                      width: double.infinity,
+                      padding: EdgeInsets.fromLTRB(
+                        4,
+                        2,
+                        hiddenCount > 0 ? 24 : 4,
+                        2,
+                      ),
+                      decoration: BoxDecoration(
+                        border: index < visiblePallets.length - 1
+                            ? const Border(
+                                bottom: BorderSide(color: Colors.black12),
+                              )
+                            : null,
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Text(
+                            visiblePallets[index]['sku']?.toString() ?? '',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
-                        ),
-                        Text(
-                          '${_palletBoxCount(visiblePallets[index])} cajas',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(fontSize: 9),
-                        ),
-                      ],
+                          Text(
+                            '${_palletBoxCount(visiblePallets[index])} cajas',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(fontSize: 9),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ),
@@ -1919,66 +1742,78 @@ int _palletBoxCount(Map<String, dynamic> pallet) {
   return int.tryParse(value?.toString() ?? '') ?? 0;
 }
 
-class _RackDropPreview extends StatelessWidget {
-  const _RackDropPreview({
-    required this.position,
-    required this.positionCode,
-    required this.locationCode,
-  });
+class _PalletLongPressDraggable extends StatelessWidget {
+  const _PalletLongPressDraggable({required this.pallet, required this.child});
 
-  final _RackPosition position;
-  final String positionCode;
-  final String locationCode;
+  final Map<String, dynamic> pallet;
+  final Widget child;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      height: double.infinity,
-      decoration: BoxDecoration(
-        color: const Color(0xFFDCEBFF),
-        borderRadius: BorderRadius.circular(6),
+    return LongPressDraggable<Map<String, dynamic>>(
+      data: pallet,
+      delay: const Duration(milliseconds: 450),
+      dragAnchorStrategy: pointerDragAnchorStrategy,
+      feedback: Transform.translate(
+        offset: const Offset(-70, -64),
+        child: _PalletDragFeedback(pallet: pallet),
       ),
-      padding: const EdgeInsets.symmetric(horizontal: 4),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          const Icon(Icons.place_outlined, size: 16),
-          const SizedBox(height: 2),
-          Text(
-            positionCode,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            textAlign: TextAlign.center,
-            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
-          ),
-          Text(
-            position.label,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            textAlign: TextAlign.center,
-            style: const TextStyle(fontSize: 9),
-          ),
-          Text(
-            locationCode,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            textAlign: TextAlign.center,
-            style: const TextStyle(fontSize: 9),
-          ),
-        ],
+      childWhenDragging: child,
+      child: child,
+    );
+  }
+}
+
+class _PalletDragFeedback extends StatelessWidget {
+  const _PalletDragFeedback({required this.pallet});
+
+  final Map<String, dynamic> pallet;
+
+  @override
+  Widget build(BuildContext context) {
+    final sku = pallet['sku']?.toString() ?? '';
+    final name = pallet['productName']?.toString() ?? 'Producto';
+    return Material(
+      color: Colors.white,
+      elevation: 6,
+      borderRadius: BorderRadius.circular(6),
+      child: Container(
+        width: 140,
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+        decoration: BoxDecoration(
+          border: Border.all(color: Colors.black),
+          borderRadius: BorderRadius.circular(6),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              sku,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+            ),
+            Text(
+              name,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 10),
+            ),
+            Text(
+              '${_palletBoxCount(pallet)} cajas',
+              style: const TextStyle(fontSize: 10),
+            ),
+          ],
+        ),
       ),
     );
   }
 }
 
 class _OutsideRackTarget extends StatelessWidget {
-  const _OutsideRackTarget({
-    required this.selectedPallet,
-    required this.onMoveOutside,
-  });
+  const _OutsideRackTarget({required this.onMoveOutside});
 
-  final Map<String, dynamic>? selectedPallet;
   final ValueChanged<Map<String, dynamic>> onMoveOutside;
 
   @override
@@ -1987,39 +1822,34 @@ class _OutsideRackTarget extends StatelessWidget {
       onAcceptWithDetails: (details) => onMoveOutside(details.data),
       builder: (context, candidateData, rejectedData) {
         final dragging = candidateData.isNotEmpty;
-        final moveMode = selectedPallet != null;
-        final active = dragging || moveMode;
-        return GestureDetector(
-          onTap: moveMode ? () => onMoveOutside(selectedPallet!) : null,
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 140),
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-            decoration: BoxDecoration(
-              color: active ? const Color(0xFFE8F0FE) : const Color(0xFFF7F7F7),
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(
-                color: active ? Colors.black : Colors.black26,
-                width: active ? 2 : 1,
+        return AnimatedContainer(
+          duration: const Duration(milliseconds: 140),
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          decoration: BoxDecoration(
+            color: dragging ? const Color(0xFFE8F0FE) : const Color(0xFFF7F7F7),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: dragging ? Colors.black : Colors.black26,
+              width: dragging ? 2 : 1,
+            ),
+          ),
+          child: Row(
+            children: [
+              Icon(
+                Icons.outbox_outlined,
+                color: dragging ? Colors.black : Colors.black54,
               ),
-            ),
-            child: Row(
-              children: [
-                Icon(
-                  Icons.outbox_outlined,
-                  color: active ? Colors.black : Colors.black54,
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  dragging
+                      ? 'Suelta para sacar del rack'
+                      : 'Soltar aqui para sacar del rack',
+                  style: const TextStyle(fontWeight: FontWeight.w600),
                 ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    dragging
-                        ? 'Suelta para sacar del rack'
-                        : 'Soltar aqui para sacar del rack',
-                    style: const TextStyle(fontWeight: FontWeight.w600),
-                  ),
-                ),
-              ],
-            ),
+              ),
+            ],
           ),
         );
       },
@@ -2033,7 +1863,6 @@ class _PendingPalletsPanel extends StatelessWidget {
     required this.query,
     required this.onAddPallet,
     required this.onDropOutside,
-    required this.onSelectPallet,
     required this.onDepletePallet,
     required this.onQueryChanged,
   });
@@ -2042,7 +1871,6 @@ class _PendingPalletsPanel extends StatelessWidget {
   final String query;
   final VoidCallback onAddPallet;
   final ValueChanged<Map<String, dynamic>> onDropOutside;
-  final ValueChanged<Map<String, dynamic>> onSelectPallet;
   final ValueChanged<Map<String, dynamic>> onDepletePallet;
   final ValueChanged<String> onQueryChanged;
 
@@ -2084,10 +1912,7 @@ class _PendingPalletsPanel extends StatelessWidget {
         const SizedBox(height: 6),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 12),
-          child: _OutsideRackTarget(
-            selectedPallet: null,
-            onMoveOutside: onDropOutside,
-          ),
+          child: _OutsideRackTarget(onMoveOutside: onDropOutside),
         ),
         const SizedBox(height: 8),
         Expanded(
@@ -2102,10 +1927,12 @@ class _PendingPalletsPanel extends StatelessWidget {
                     final pallet = pallets[index];
                     return SizedBox(
                       width: 210,
-                      child: GestureDetector(
-                        onLongPress: () => onSelectPallet(pallet),
-                        onDoubleTap: () => onDepletePallet(pallet),
-                        child: _PalletCard(pallet: pallet),
+                      child: _PalletLongPressDraggable(
+                        pallet: pallet,
+                        child: GestureDetector(
+                          onDoubleTap: () => onDepletePallet(pallet),
+                          child: _PalletCard(pallet: pallet),
+                        ),
                       ),
                     );
                   },
