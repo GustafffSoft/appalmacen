@@ -264,9 +264,22 @@ class _WarehouseRackPageState extends State<WarehouseRackPage> {
                       .toList();
 
             return AlertDialog(
-              title: const Text('Dar entrada a pallet'),
+              insetPadding: const EdgeInsets.symmetric(
+                horizontal: 16,
+                vertical: 12,
+              ),
+              titlePadding: const EdgeInsets.fromLTRB(18, 14, 18, 8),
+              contentPadding: const EdgeInsets.fromLTRB(18, 0, 18, 6),
+              actionsPadding: const EdgeInsets.fromLTRB(10, 2, 10, 10),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+              title: const Text(
+                'Dar entrada a pallet',
+                style: TextStyle(fontSize: 21, fontWeight: FontWeight.w600),
+              ),
               content: SizedBox(
-                width: 520,
+                width: 420,
                 child: SingleChildScrollView(
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
@@ -276,10 +289,15 @@ class _WarehouseRackPageState extends State<WarehouseRackPage> {
                         TextField(
                           controller: productSearchController,
                           decoration: const InputDecoration(
-                            labelText: 'Buscar producto',
-                            hintText: 'Nombre o codigo',
-                            prefixIcon: Icon(Icons.search),
+                            hintText: 'Buscar producto',
+                            prefixIcon: Icon(Icons.search, size: 21),
+                            prefixIconConstraints: BoxConstraints(minWidth: 42),
                             border: OutlineInputBorder(),
+                            isDense: true,
+                            contentPadding: EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 12,
+                            ),
                           ),
                           onChanged: (value) {
                             setDialogState(() {
@@ -291,7 +309,7 @@ class _WarehouseRackPageState extends State<WarehouseRackPage> {
                         if (productQuery.isNotEmpty) ...[
                           const SizedBox(height: 8),
                           Container(
-                            constraints: const BoxConstraints(maxHeight: 132),
+                            constraints: const BoxConstraints(maxHeight: 106),
                             decoration: BoxDecoration(
                               border: Border.all(color: Colors.black12),
                               borderRadius: BorderRadius.circular(8),
@@ -362,10 +380,16 @@ class _WarehouseRackPageState extends State<WarehouseRackPage> {
                                           'Producto';
                                       return ListTile(
                                         dense: true,
+                                        visualDensity: VisualDensity.compact,
+                                        contentPadding:
+                                            const EdgeInsets.symmetric(
+                                              horizontal: 10,
+                                            ),
                                         title: Text(
                                           name,
                                           maxLines: 2,
                                           overflow: TextOverflow.ellipsis,
+                                          style: const TextStyle(fontSize: 14),
                                         ),
                                         onTap: () {
                                           setDialogState(() {
@@ -384,15 +408,15 @@ class _WarehouseRackPageState extends State<WarehouseRackPage> {
                       ] else
                         Container(
                           width: double.infinity,
-                          padding: const EdgeInsets.fromLTRB(12, 8, 4, 8),
+                          padding: const EdgeInsets.fromLTRB(10, 5, 2, 5),
                           decoration: BoxDecoration(
                             border: Border.all(color: Colors.black26),
                             borderRadius: BorderRadius.circular(8),
                           ),
                           child: Row(
                             children: [
-                              const Icon(Icons.check_circle, size: 22),
-                              const SizedBox(width: 10),
+                              const Icon(Icons.check_circle, size: 20),
+                              const SizedBox(width: 8),
                               Expanded(
                                 child: Text(
                                   selectedProduct!['name']?.toString() ??
@@ -400,6 +424,7 @@ class _WarehouseRackPageState extends State<WarehouseRackPage> {
                                   maxLines: 2,
                                   overflow: TextOverflow.ellipsis,
                                   style: const TextStyle(
+                                    fontSize: 14,
                                     fontWeight: FontWeight.w600,
                                   ),
                                 ),
@@ -420,12 +445,15 @@ class _WarehouseRackPageState extends State<WarehouseRackPage> {
                             ],
                           ),
                         ),
-                      const SizedBox(height: 12),
+                      const SizedBox(height: 10),
                       const Text(
                         'Cantidad de cajas en este pallet',
-                        style: TextStyle(fontWeight: FontWeight.w600),
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
-                      const SizedBox(height: 6),
+                      const SizedBox(height: 4),
                       TextField(
                         controller: quantityController,
                         keyboardType: const TextInputType.numberWithOptions(
@@ -437,58 +465,71 @@ class _WarehouseRackPageState extends State<WarehouseRackPage> {
                         ],
                         decoration: const InputDecoration(
                           hintText: '0',
-                          prefixIcon: Icon(Icons.numbers),
+                          prefixIcon: Icon(Icons.numbers, size: 21),
+                          prefixIconConstraints: BoxConstraints(minWidth: 42),
                           border: OutlineInputBorder(),
+                          isDense: true,
+                          contentPadding: EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 12,
+                          ),
                         ),
                       ),
-                      const SizedBox(height: 12),
-                      OutlinedButton.icon(
-                        onPressed: () async {
-                          final source =
-                              await showModalBottomSheet<ImageSource>(
-                                context: context,
-                                builder: (context) => SafeArea(
-                                  child: Column(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      ListTile(
-                                        leading: const Icon(Icons.camera_alt),
-                                        title: const Text('Tomar foto'),
-                                        onTap: () => Navigator.of(
-                                          context,
-                                        ).pop(ImageSource.camera),
-                                      ),
-                                      ListTile(
-                                        leading: const Icon(
-                                          Icons.photo_library,
+                      const SizedBox(height: 10),
+                      SizedBox(
+                        width: double.infinity,
+                        height: 42,
+                        child: OutlinedButton.icon(
+                          onPressed: () async {
+                            final source =
+                                await showModalBottomSheet<ImageSource>(
+                                  context: context,
+                                  builder: (context) => SafeArea(
+                                    child: Column(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        ListTile(
+                                          leading: const Icon(Icons.camera_alt),
+                                          title: const Text('Tomar foto'),
+                                          onTap: () => Navigator.of(
+                                            context,
+                                          ).pop(ImageSource.camera),
                                         ),
-                                        title: const Text(
-                                          'Seleccionar galeria',
+                                        ListTile(
+                                          leading: const Icon(
+                                            Icons.photo_library,
+                                          ),
+                                          title: const Text(
+                                            'Seleccionar galeria',
+                                          ),
+                                          onTap: () => Navigator.of(
+                                            context,
+                                          ).pop(ImageSource.gallery),
                                         ),
-                                        onTap: () => Navigator.of(
-                                          context,
-                                        ).pop(ImageSource.gallery),
-                                      ),
-                                    ],
+                                      ],
+                                    ),
                                   ),
-                                ),
-                              );
-                          if (source == null) return;
-                          final file = await ImagePicker().pickImage(
-                            source: source,
-                            imageQuality: 60,
-                            maxWidth: 1600,
-                            maxHeight: 1600,
-                          );
-                          if (file != null) {
-                            setDialogState(() => selectedPhoto = file);
-                          }
-                        },
-                        icon: const Icon(Icons.photo_camera_outlined),
-                        label: Text(
-                          selectedPhoto == null
-                              ? 'Foto obligatoria del pallet'
-                              : 'Foto seleccionada',
+                                );
+                            if (source == null) return;
+                            final file = await ImagePicker().pickImage(
+                              source: source,
+                              imageQuality: 60,
+                              maxWidth: 1600,
+                              maxHeight: 1600,
+                            );
+                            if (file != null) {
+                              setDialogState(() => selectedPhoto = file);
+                            }
+                          },
+                          icon: const Icon(
+                            Icons.photo_camera_outlined,
+                            size: 20,
+                          ),
+                          label: Text(
+                            selectedPhoto == null
+                                ? 'Foto obligatoria del pallet'
+                                : 'Foto seleccionada',
+                          ),
                         ),
                       ),
                     ],
