@@ -792,14 +792,52 @@ class _WarehouseRackPageState extends State<WarehouseRackPage> {
         children: [
           Material(
             color: Theme.of(context).colorScheme.surface,
-            child: ListTile(
-              leading: const Icon(Icons.view_module_outlined),
-              title: const Text('Mapa de Racks'),
-              subtitle: const Text('Entrada y ubicacion de pallets'),
-              trailing: IconButton(
-                tooltip: 'Agregar rack',
-                onPressed: () => _showRackDialog(context),
-                icon: const Icon(Icons.add),
+            child: SizedBox(
+              height: 48,
+              child: Padding(
+                padding: const EdgeInsets.only(left: 12, right: 4),
+                child: Row(
+                  children: [
+                    const Icon(Icons.view_module_outlined, size: 20),
+                    const SizedBox(width: 10),
+                    const Expanded(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Mapa de Racks',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          Text(
+                            'Entrada y ubicacion de pallets',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 10,
+                              color: Colors.black54,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: 'Agregar rack',
+                      onPressed: () => _showRackDialog(context),
+                      visualDensity: VisualDensity.compact,
+                      constraints: const BoxConstraints.tightFor(
+                        width: 40,
+                        height: 40,
+                      ),
+                      icon: const Icon(Icons.add, size: 21),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -853,9 +891,20 @@ class _WarehouseRackPageState extends State<WarehouseRackPage> {
                   return const Center(child: CircularProgressIndicator());
                 }
 
-                final racks = rackSnapshot.data!.docs
-                    .map((doc) => {'rackId': doc.id, ...doc.data()})
-                    .toList();
+                final racks =
+                    rackSnapshot.data!.docs
+                        .map((doc) => {'rackId': doc.id, ...doc.data()})
+                        .toList()
+                      ..sort((a, b) {
+                        final numberComparison = _rackNumberFromIdOrName(
+                          a,
+                          1 << 30,
+                        ).compareTo(_rackNumberFromIdOrName(b, 1 << 30));
+                        if (numberComparison != 0) return numberComparison;
+                        return (a['name']?.toString() ?? '').compareTo(
+                          b['name']?.toString() ?? '',
+                        );
+                      });
                 _currentRacks = racks;
                 final palletDocs = palletSnapshot.data!.docs;
                 final placedByLocation = _placedByLocation(palletDocs);
@@ -927,7 +976,7 @@ class _WarehouseRackPageState extends State<WarehouseRackPage> {
                       )
                     else ...[
                       SizedBox(
-                        height: 235,
+                        height: unassigned.isEmpty ? 198 : 235,
                         child: _PendingPalletsPanel(
                           pallets: unassigned,
                           query: _query,
@@ -1018,18 +1067,34 @@ class _RackMapState extends State<_RackMap> {
   final _viewportKey = GlobalKey();
   final Map<String, GlobalKey> _sectionKeys = {};
   List<_RackSectionInfo> _visibleSections = [];
+  String? _selectedRackId;
   String _currentTitle = '';
   String _currentSubtitle = '';
 
   @override
   void initState() {
     super.initState();
+    _selectedRackId = widget.racks.isEmpty
+        ? null
+        : widget.racks.first['rackId']?.toString();
     _scrollController.addListener(_scheduleCurrentSectionUpdate);
   }
 
   @override
   void didUpdateWidget(covariant _RackMap oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (widget.racks.isEmpty) {
+      _selectedRackId = null;
+      _currentTitle = '';
+      _currentSubtitle = '';
+    } else if (_selectedRackId == null ||
+        !widget.racks.any(
+          (rack) => rack['rackId']?.toString() == _selectedRackId,
+        )) {
+      _selectedRackId = widget.racks.first['rackId']?.toString();
+      _currentTitle = '';
+      _currentSubtitle = '';
+    }
     _scheduleCurrentSectionUpdate();
   }
 
@@ -1043,6 +1108,20 @@ class _RackMapState extends State<_RackMap> {
   void _scheduleCurrentSectionUpdate() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _updateCurrentSection();
+    });
+  }
+
+  void _selectRack(String rackId) {
+    if (_selectedRackId == rackId) return;
+    setState(() {
+      _selectedRackId = rackId;
+      _currentTitle = '';
+      _currentSubtitle = '';
+      _visibleSections = [];
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_scrollController.hasClients) _scrollController.jumpTo(0);
+      _scheduleCurrentSectionUpdate();
     });
   }
 
@@ -1090,106 +1169,122 @@ class _RackMapState extends State<_RackMap> {
       );
     }
     final moveMode = widget.selectedPallet != null;
+    final selectedRackId =
+        widget.racks.any(
+          (rack) => rack['rackId']?.toString() == _selectedRackId,
+        )
+        ? _selectedRackId!
+        : widget.racks.first['rackId']?.toString() ?? '';
+    final selectedRackIndex = widget.racks.indexWhere(
+      (rack) => rack['rackId']?.toString() == selectedRackId,
+    );
+    final rackIndex = selectedRackIndex < 0 ? 0 : selectedRackIndex;
+    final rack = widget.racks[rackIndex];
+    final rackId = rack['rackId']?.toString() ?? '';
+    final rackNumber = _rackNumberFromIdOrName(rack, rackIndex + 1);
+    final rackName = _rackDisplayName(rack, rackNumber);
+    final levels = _levelsForRack(rack);
+    final positions = _positionsForRack(rack);
     final sections = <_RackSectionInfo>[];
     final slivers = <Widget>[
       SliverToBoxAdapter(child: SizedBox(height: moveMode ? 4 : 12)),
     ];
-    for (var rackIndex = 0; rackIndex < widget.racks.length; rackIndex++) {
-      final rack = widget.racks[rackIndex];
-      final rackId = rack['rackId']?.toString() ?? '';
-      final rackNumber = _rackNumberFromIdOrName(rack, rackIndex + 1);
-      final rackName = _rackDisplayName(rack, rackNumber);
-      final levels = _levelsForRack(rack);
-      final positions = _positionsForRack(rack);
-      if (widget.selectedPallet == null) {
-        slivers.add(
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12),
-              child: _RackControls(
-                rackName: rackName,
-                levelCount: levels.length,
-                positionCount: positions.length,
-                onEdit: () => widget.onEditRack(rack),
-                onDelete: () => widget.onDeleteRack(rack),
-              ),
-            ),
-          ),
-        );
-      }
-      for (final level in levels) {
-        final hasVisiblePosition = positions.any((position) {
-          if (widget.query.isEmpty) return true;
-          final locationCode = '$rackId-L$level-${position.code}';
-          final pallets = widget.placedByLocation[locationCode] ?? [];
-          return pallets.any((pallet) {
-            final values = [
-              pallet['palletId'],
-              pallet['sku'],
-              pallet['productName'],
-              pallet['locationCode'],
-              pallet['rackId'],
-              pallet['position'],
-            ].map((value) => value?.toString().toLowerCase() ?? '').join(' ');
-            return values.contains(widget.query);
-          });
-        });
-        if (!hasVisiblePosition) continue;
-        final sectionId = '$rackId-$level';
-        final sectionKey = _sectionKeys.putIfAbsent(
-          sectionId,
-          () => GlobalKey(),
-        );
-        final section = _RackSectionInfo(
-          title: '$rackName - Piso $level',
-          subtitle:
-              '${positions.length} posiciones por piso - $rackNumber.1 a $rackNumber.${positions.length}',
-          key: sectionKey,
-        );
-        sections.add(section);
-        slivers.add(
-          SliverToBoxAdapter(
-            child: KeyedSubtree(
-              key: sectionKey,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  if (!moveMode)
-                    _RackSectionTitle(
-                      title: section.title,
-                      subtitle: section.subtitle,
-                    ),
-                  Padding(
-                    padding: EdgeInsets.fromLTRB(
-                      moveMode ? 6 : 12,
-                      moveMode ? 3 : 0,
-                      moveMode ? 6 : 12,
-                      moveMode ? 3 : 12,
-                    ),
-                    child: _RackLevelGrid(
-                      rackId: rackId,
-                      rackName: rackName,
-                      rackNumber: rackNumber,
-                      level: level,
-                      positions: positions,
-                      placedByLocation: widget.placedByLocation,
-                      query: widget.query,
-                      selectedPallet: widget.selectedPallet,
-                      onSelectPallet: widget.onSelectPallet,
-                      onDepletePallet: widget.onDepletePallet,
-                      onAccept: widget.onAccept,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        );
-      }
+    if (widget.selectedPallet == null) {
       slivers.add(
-        SliverToBoxAdapter(child: SizedBox(height: moveMode ? 4 : 12)),
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: _RackControls(
+              rackName: rackName,
+              levelCount: levels.length,
+              positionCount: positions.length,
+              onEdit: () => widget.onEditRack(rack),
+              onDelete: () => widget.onDeleteRack(rack),
+            ),
+          ),
+        ),
       );
     }
+    for (final level in levels) {
+      final hasVisiblePosition = positions.any((position) {
+        if (widget.query.isEmpty) return true;
+        final positionCode = _positionDisplayCode(
+          rackNumber,
+          positions,
+          position,
+        );
+        final visibleLocation = [
+          rackName,
+          'rack $rackNumber',
+          positionCode,
+          position.label,
+          'piso $level',
+        ].map((value) => value.toLowerCase()).join(' ');
+        if (visibleLocation.contains(widget.query)) return true;
+        final locationCode = '$rackId-L$level-${position.code}';
+        final pallets = widget.placedByLocation[locationCode] ?? [];
+        return pallets.any((pallet) {
+          final values = [
+            pallet['palletId'],
+            pallet['sku'],
+            pallet['productName'],
+            pallet['locationCode'],
+            pallet['rackId'],
+            pallet['position'],
+          ].map((value) => value?.toString().toLowerCase() ?? '').join(' ');
+          return values.contains(widget.query);
+        });
+      });
+      if (!hasVisiblePosition) continue;
+      final sectionId = '$rackId-$level';
+      final sectionKey = _sectionKeys.putIfAbsent(sectionId, () => GlobalKey());
+      final section = _RackSectionInfo(
+        title: '$rackName - Piso $level',
+        subtitle:
+            '${positions.length} posiciones por piso - $rackNumber.1 a $rackNumber.${positions.length}',
+        key: sectionKey,
+      );
+      sections.add(section);
+      slivers.add(
+        SliverToBoxAdapter(
+          child: KeyedSubtree(
+            key: sectionKey,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                if (!moveMode)
+                  _RackSectionTitle(
+                    title: section.title,
+                    subtitle: section.subtitle,
+                  ),
+                Padding(
+                  padding: EdgeInsets.fromLTRB(
+                    moveMode ? 6 : 12,
+                    moveMode ? 3 : 0,
+                    moveMode ? 6 : 12,
+                    moveMode ? 3 : 12,
+                  ),
+                  child: _RackLevelGrid(
+                    rackId: rackId,
+                    rackName: rackName,
+                    rackNumber: rackNumber,
+                    level: level,
+                    positions: positions,
+                    placedByLocation: widget.placedByLocation,
+                    query: widget.query,
+                    selectedPallet: widget.selectedPallet,
+                    onSelectPallet: widget.onSelectPallet,
+                    onDepletePallet: widget.onDepletePallet,
+                    onAccept: widget.onAccept,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+    slivers.add(SliverToBoxAdapter(child: SizedBox(height: moveMode ? 4 : 12)));
 
     _visibleSections = sections;
     if (_visibleSections.isNotEmpty && _currentTitle.isEmpty) {
@@ -1200,6 +1295,11 @@ class _RackMapState extends State<_RackMap> {
 
     return Column(
       children: [
+        _RackSelector(
+          racks: widget.racks,
+          selectedRackId: selectedRackId,
+          onSelected: _selectRack,
+        ),
         if (!moveMode)
           _CurrentRackHeader(title: _currentTitle, subtitle: _currentSubtitle),
         Expanded(
@@ -1216,6 +1316,76 @@ class _RackMapState extends State<_RackMap> {
           ),
         ),
       ],
+    );
+  }
+}
+
+class _RackSelector extends StatelessWidget {
+  const _RackSelector({
+    required this.racks,
+    required this.selectedRackId,
+    required this.onSelected,
+  });
+
+  final List<Map<String, dynamic>> racks;
+  final String selectedRackId;
+  final ValueChanged<String> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Theme.of(context).scaffoldBackgroundColor,
+      child: Container(
+        height: 46,
+        decoration: const BoxDecoration(
+          border: Border(bottom: BorderSide(color: Colors.black12)),
+        ),
+        child: Row(
+          children: [
+            const Padding(
+              padding: EdgeInsets.only(left: 10, right: 6),
+              child: Icon(Icons.view_module_outlined, size: 18),
+            ),
+            Expanded(
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.symmetric(vertical: 5),
+                itemCount: racks.length,
+                separatorBuilder: (_, _) => const SizedBox(width: 6),
+                itemBuilder: (context, index) {
+                  final rack = racks[index];
+                  final rackId = rack['rackId']?.toString() ?? '';
+                  final rackNumber = _rackNumberFromIdOrName(rack, index + 1);
+                  final selected = rackId == selectedRackId;
+                  return Tooltip(
+                    message: 'Rack $rackNumber',
+                    child: OutlinedButton(
+                      onPressed: rackId.isEmpty
+                          ? null
+                          : () => onSelected(rackId),
+                      style: OutlinedButton.styleFrom(
+                        minimumSize: const Size(44, 36),
+                        padding: const EdgeInsets.symmetric(horizontal: 13),
+                        foregroundColor: selected ? Colors.white : Colors.black,
+                        backgroundColor: selected ? Colors.black : Colors.white,
+                        side: const BorderSide(color: Colors.black),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                      ),
+                      child: Text(
+                        '$rackNumber',
+                        style: const TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+            const SizedBox(width: 10),
+          ],
+        ),
+      ),
     );
   }
 }
