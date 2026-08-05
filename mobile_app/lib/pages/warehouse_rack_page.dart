@@ -1641,6 +1641,8 @@ class _RackSlot extends StatelessWidget {
                   ],
                 )
               : _RackSlotPallets(
+                  key: ValueKey('pallets-$rackId-$level-${position.code}'),
+                  positionCode: positionCode,
                   pallets: pallets,
                   onDepletePallet: onDepletePallet,
                 ),
@@ -1650,88 +1652,154 @@ class _RackSlot extends StatelessWidget {
   }
 }
 
-class _RackSlotPallets extends StatelessWidget {
+class _RackSlotPallets extends StatefulWidget {
   const _RackSlotPallets({
+    super.key,
+    required this.positionCode,
     required this.pallets,
     required this.onDepletePallet,
   });
 
+  final String positionCode;
   final List<Map<String, dynamic>> pallets;
   final ValueChanged<Map<String, dynamic>> onDepletePallet;
 
   @override
+  State<_RackSlotPallets> createState() => _RackSlotPalletsState();
+}
+
+class _RackSlotPalletsState extends State<_RackSlotPallets> {
+  int _currentIndex = 0;
+
+  @override
+  void didUpdateWidget(covariant _RackSlotPallets oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.pallets.isEmpty || _currentIndex >= widget.pallets.length) {
+      _currentIndex = 0;
+    }
+  }
+
+  void _showNextPallet() {
+    if (widget.pallets.length < 2) return;
+    setState(() {
+      _currentIndex = (_currentIndex + 1) % widget.pallets.length;
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final visiblePallets = pallets.take(2).toList();
-    final hiddenCount = pallets.length - visiblePallets.length;
-    return Stack(
-      children: [
-        Column(
-          children: [
-            for (var index = 0; index < visiblePallets.length; index++)
-              Expanded(
-                child: _PalletLongPressDraggable(
-                  pallet: visiblePallets[index],
-                  child: GestureDetector(
-                    onDoubleTap: () => onDepletePallet(visiblePallets[index]),
-                    child: Container(
-                      width: double.infinity,
-                      padding: EdgeInsets.fromLTRB(
-                        4,
-                        2,
-                        hiddenCount > 0 ? 24 : 4,
-                        2,
-                      ),
-                      decoration: BoxDecoration(
-                        border: index < visiblePallets.length - 1
-                            ? const Border(
-                                bottom: BorderSide(color: Colors.black12),
-                              )
-                            : null,
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Text(
-                            visiblePallets[index]['sku']?.toString() ?? '',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              fontSize: 10,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          Text(
-                            '${_palletBoxCount(visiblePallets[index])} cajas',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(fontSize: 9),
-                          ),
-                        ],
+    if (widget.pallets.isEmpty) return const SizedBox.shrink();
+    final safeIndex = _currentIndex.clamp(0, widget.pallets.length - 1);
+    final pallet = widget.pallets[safeIndex];
+    final hasMultiple = widget.pallets.length > 1;
+    return _PalletLongPressDraggable(
+      pallet: pallet,
+      child: Semantics(
+        button: hasMultiple,
+        label:
+            '${pallet['sku'] ?? ''}, ${_palletBoxCount(pallet)} cajas, '
+            'pallet ${safeIndex + 1} de ${widget.pallets.length}',
+        child: GestureDetector(
+          onTap: hasMultiple ? _showNextPallet : null,
+          onDoubleTap: () => widget.onDepletePallet(pallet),
+          child: Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 2),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        widget.positionCode,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                     ),
+                    if (hasMultiple)
+                      Text(
+                        '${safeIndex + 1}/${widget.pallets.length}',
+                        style: const TextStyle(
+                          fontSize: 9,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                  ],
+                ),
+                const Spacer(),
+                Text(
+                  pallet['sku']?.toString() ?? '',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                Text(
+                  '${_palletBoxCount(pallet)} cajas',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 9),
+                ),
+                if (hasMultiple) ...[
+                  const SizedBox(height: 2),
+                  _PalletPageIndicator(
+                    currentIndex: safeIndex,
+                    total: widget.pallets.length,
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _PalletPageIndicator extends StatelessWidget {
+  const _PalletPageIndicator({required this.currentIndex, required this.total});
+
+  final int currentIndex;
+  final int total;
+
+  @override
+  Widget build(BuildContext context) {
+    const maxDots = 5;
+    final dotCount = total.clamp(0, maxDots);
+    final maxStart = total > maxDots ? total - maxDots : 0;
+    final start = (currentIndex - 2).clamp(0, maxStart);
+    return SizedBox(
+      height: 7,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          for (var offset = 0; offset < dotCount; offset++)
+            SizedBox(
+              width: 8,
+              height: 7,
+              child: Center(
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 140),
+                  width: start + offset == currentIndex ? 6 : 4,
+                  height: start + offset == currentIndex ? 6 : 4,
+                  decoration: BoxDecoration(
+                    color: start + offset == currentIndex
+                        ? Colors.black
+                        : Colors.black26,
+                    shape: BoxShape.circle,
                   ),
                 ),
               ),
-          ],
-        ),
-        if (hiddenCount > 0)
-          Positioned(
-            top: 3,
-            right: 3,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
-              decoration: BoxDecoration(
-                color: Colors.black,
-                borderRadius: BorderRadius.circular(999),
-              ),
-              child: Text(
-                '+$hiddenCount',
-                style: const TextStyle(color: Colors.white, fontSize: 9),
-              ),
             ),
-          ),
-      ],
+        ],
+      ),
     );
   }
 }
