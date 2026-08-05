@@ -155,7 +155,7 @@ class _HomePageState extends State<HomePage> {
                 ListTile(
                   leading: const Icon(Icons.view_in_ar_outlined),
                   title: const Text('Lista de Pallets'),
-                  subtitle: const Text('Editar cantidades, nombres y fotos'),
+                  subtitle: const Text('Pallets activos e historial'),
                   onTap: () {
                     Navigator.of(context).pop();
                     Navigator.of(context).push(

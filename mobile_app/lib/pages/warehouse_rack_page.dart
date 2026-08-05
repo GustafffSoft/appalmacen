@@ -621,37 +621,6 @@ class _WarehouseRackPageState extends State<WarehouseRackPage> {
   }) async {
     final firebaseService = context.read<FirebaseService>();
     final palletId = pallet['palletId'].toString();
-    final targetLocation = '$rackId-L$level-$position';
-    final currentLocation = pallet['locationCode']?.toString() ?? '';
-    Map<String, int>? consumed;
-    if (level == 1 && currentLocation != targetLocation) {
-      final isEmpty = await showDialog<bool>(
-        context: context,
-        barrierDismissible: false,
-        builder: (dialogContext) => AlertDialog(
-          title: Text('$rackId - Piso 1 - $position'),
-          content: const Text('¿Esta posicion del piso 1 esta vacia?'),
-          actions: [
-            OutlinedButton(
-              onPressed: () => Navigator.of(dialogContext).pop(false),
-              child: const Text('No esta vacia'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.of(dialogContext).pop(true),
-              child: const Text('Esta vacia'),
-            ),
-          ],
-        ),
-      );
-      if (isEmpty == null || !context.mounted) return false;
-      if (isEmpty) {
-        consumed = await firebaseService.consumeFirstFloorLocation(
-          rackId: rackId,
-          position: position,
-          excludingPalletId: palletId,
-        );
-      }
-    }
     await firebaseService.saveWarehousePalletLocation(
       palletId: palletId,
       sku: pallet['sku'].toString(),
@@ -661,16 +630,6 @@ class _WarehouseRackPageState extends State<WarehouseRackPage> {
       level: level,
       position: position,
     );
-    if (context.mounted && consumed != null && consumed['boxes']! > 0) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            '${consumed['boxes']} cajas descontadas de '
-            '${consumed['pallets']} pallet(s) agotados.',
-          ),
-        ),
-      );
-    }
     return true;
   }
 
@@ -704,8 +663,9 @@ class _WarehouseRackPageState extends State<WarehouseRackPage> {
       builder: (dialogContext) => AlertDialog(
         title: const Text('Dar de baja pallet'),
         content: Text(
-          'Este pallet esta vacio?\n\n'
-          'Se descontaran $boxes cajas del inventario y el pallet quedara como agotado.\n\n'
+          '¿Confirmas que este pallet esta vacio?\n\n'
+          'Se descontaran $boxes cajas del inventario, se quitara del rack '
+          'y se guardara en el historial de pallets agotados.\n\n'
           '$name',
         ),
         actions: [
@@ -715,7 +675,7 @@ class _WarehouseRackPageState extends State<WarehouseRackPage> {
           ),
           FilledButton(
             onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: const Text('Dar de baja'),
+            child: const Text('Mover al historial'),
           ),
         ],
       ),
@@ -730,7 +690,7 @@ class _WarehouseRackPageState extends State<WarehouseRackPage> {
         SnackBar(
           content: Text(
             deducted > 0
-                ? '$deducted cajas descontadas. Pallet agotado.'
+                ? '$deducted cajas descontadas. Pallet movido al historial.'
                 : 'El pallet ya no tenia cantidad disponible.',
           ),
         ),

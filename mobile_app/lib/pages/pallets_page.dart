@@ -5,6 +5,8 @@ import 'package:provider/provider.dart';
 
 import '../services/firebase_service.dart';
 
+enum _PalletView { active, history }
+
 class PalletsPage extends StatefulWidget {
   const PalletsPage({super.key});
 
@@ -15,6 +17,7 @@ class PalletsPage extends StatefulWidget {
 class _PalletsPageState extends State<PalletsPage> {
   final _searchController = TextEditingController();
   String _query = '';
+  _PalletView _view = _PalletView.active;
 
   @override
   void initState() {
@@ -33,6 +36,11 @@ class _PalletsPageState extends State<PalletsPage> {
   int _toInt(dynamic value) {
     if (value is num) return value.toInt();
     return int.tryParse(value?.toString() ?? '') ?? 0;
+  }
+
+  bool _isExhausted(Map<String, dynamic> pallet) {
+    return pallet['status']?.toString() == 'agotado' ||
+        _toInt(pallet['boxes']) <= 0;
   }
 
   bool _matches(Map<String, dynamic> data, String docId) {
@@ -271,8 +279,9 @@ class _PalletsPageState extends State<PalletsPage> {
       builder: (dialogContext) => AlertDialog(
         title: const Text('Dar de baja pallet'),
         content: Text(
-          'Este pallet esta vacio?\n\n'
-          'Se descontaran $boxes cajas del inventario y el pallet quedara como agotado.\n\n'
+          '¿Confirmas que este pallet esta vacio?\n\n'
+          'Se descontaran $boxes cajas del inventario, se quitara del rack '
+          'y se guardara en el historial de pallets agotados.\n\n'
           '$name',
         ),
         actions: [
@@ -282,7 +291,7 @@ class _PalletsPageState extends State<PalletsPage> {
           ),
           FilledButton(
             onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: const Text('Dar de baja'),
+            child: const Text('Mover al historial'),
           ),
         ],
       ),
@@ -297,7 +306,7 @@ class _PalletsPageState extends State<PalletsPage> {
         SnackBar(
           content: Text(
             deducted > 0
-                ? '$deducted cajas descontadas. Pallet agotado.'
+                ? '$deducted cajas descontadas. Pallet movido al historial.'
                 : 'El pallet ya no tenia cantidad disponible.',
           ),
         ),
@@ -345,89 +354,169 @@ class _PalletsPageState extends State<PalletsPage> {
                 if (!snapshot.hasData) {
                   return const Center(child: CircularProgressIndicator());
                 }
-                final pallets = snapshot.data!.docs
+                final matchingPallets = snapshot.data!.docs
                     .where((doc) => _matches(doc.data(), doc.id))
                     .toList();
-                if (pallets.isEmpty) {
-                  return const Center(child: Text('No hay pallets.'));
-                }
-                return ListView.separated(
-                  padding: const EdgeInsets.fromLTRB(12, 4, 12, 16),
-                  itemCount: pallets.length,
-                  separatorBuilder: (_, _) => const SizedBox(height: 8),
-                  itemBuilder: (context, index) {
-                    final doc = pallets[index];
-                    final data = doc.data();
-                    final boxes = _toInt(data['boxes']);
-                    final status = data['status']?.toString() ?? '';
-                    final photoUploadStatus =
-                        data['photoUploadStatus']?.toString() ?? '';
-                    final location = data['locationCode']?.toString() ?? '';
-                    final photos = _photoUrls(data);
-                    final palletName =
-                        data['palletName']?.toString() ??
-                        'Pallet ${data['sku'] ?? ''}';
-                    return Card(
-                      child: ListTile(
-                        leading: photos.isEmpty
-                            ? const Icon(Icons.view_in_ar_outlined)
-                            : ClipRRect(
-                                borderRadius: BorderRadius.circular(6),
-                                child: Image.network(
-                                  photos.first,
-                                  width: 54,
-                                  height: 54,
-                                  fit: BoxFit.cover,
-                                  errorBuilder: (_, _, _) => const SizedBox(
-                                    width: 54,
-                                    child: Icon(Icons.view_in_ar_outlined),
-                                  ),
-                                ),
-                              ),
-                        title: Text(palletName),
-                        subtitle: Text(
-                          '${data['sku'] ?? ''} - ${data['productName'] ?? ''}\n'
-                          '$boxes cajas | ${location.isEmpty ? 'Sin ubicacion' : location} | '
-                          '$status | ${photos.length} foto(s)'
-                          '${photoUploadStatus.isEmpty ? '' : ' | foto: $photoUploadStatus'}',
+                final activePallets = matchingPallets
+                    .where((doc) => !_isExhausted(doc.data()))
+                    .toList();
+                final historyPallets = matchingPallets
+                    .where((doc) => _isExhausted(doc.data()))
+                    .toList();
+                final pallets = _view == _PalletView.active
+                    ? activePallets
+                    : historyPallets;
+                return Column(
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+                      child: SizedBox(
+                        width: double.infinity,
+                        child: SegmentedButton<_PalletView>(
+                          segments: [
+                            ButtonSegment(
+                              value: _PalletView.active,
+                              icon: const Icon(Icons.inventory_2_outlined),
+                              label: Text('Activos ${activePallets.length}'),
+                            ),
+                            ButtonSegment(
+                              value: _PalletView.history,
+                              icon: const Icon(Icons.history),
+                              label: Text('Historial ${historyPallets.length}'),
+                            ),
+                          ],
+                          selected: {_view},
+                          showSelectedIcon: false,
+                          onSelectionChanged: (selection) {
+                            setState(() => _view = selection.first);
+                          },
                         ),
-                        isThreeLine: true,
-                        trailing: status == 'agotado' || boxes <= 0
-                            ? const Icon(Icons.check_circle_outline)
-                            : PopupMenuButton<String>(
-                                onSelected: (value) {
-                                  if (value == 'edit') {
-                                    _editPallet(context, doc.id, data);
-                                  }
-                                  if (value == 'deplete') {
-                                    _depletePallet(context, doc.id, data);
-                                  }
-                                },
-                                itemBuilder: (context) => const [
-                                  PopupMenuItem(
-                                    value: 'edit',
-                                    child: ListTile(
-                                      leading: Icon(Icons.edit_outlined),
-                                      title: Text('Editar'),
-                                      contentPadding: EdgeInsets.zero,
-                                    ),
-                                  ),
-                                  PopupMenuItem(
-                                    value: 'deplete',
-                                    child: ListTile(
-                                      leading: Icon(
-                                        Icons.remove_circle_outline,
-                                      ),
-                                      title: Text('Dar de baja'),
-                                      contentPadding: EdgeInsets.zero,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                        onTap: () => _editPallet(context, doc.id, data),
                       ),
-                    );
-                  },
+                    ),
+                    Expanded(
+                      child: pallets.isEmpty
+                          ? Center(
+                              child: Text(
+                                _view == _PalletView.active
+                                    ? 'No hay pallets activos.'
+                                    : 'No hay pallets en el historial.',
+                              ),
+                            )
+                          : ListView.separated(
+                              padding: const EdgeInsets.fromLTRB(12, 4, 12, 16),
+                              itemCount: pallets.length,
+                              separatorBuilder: (_, _) =>
+                                  const SizedBox(height: 8),
+                              itemBuilder: (context, index) {
+                                final doc = pallets[index];
+                                final data = doc.data();
+                                final exhausted = _isExhausted(data);
+                                final boxes = exhausted
+                                    ? _toInt(
+                                        data['previousBoxes'] ?? data['boxes'],
+                                      )
+                                    : _toInt(data['boxes']);
+                                final status = data['status']?.toString() ?? '';
+                                final photoUploadStatus =
+                                    data['photoUploadStatus']?.toString() ?? '';
+                                final location = exhausted
+                                    ? data['previousLocationCode']
+                                              ?.toString() ??
+                                          ''
+                                    : data['locationCode']?.toString() ?? '';
+                                final photos = _photoUrls(data);
+                                final palletName =
+                                    data['palletName']?.toString() ??
+                                    'Pallet ${data['sku'] ?? ''}';
+                                final locationLabel = exhausted
+                                    ? location.isEmpty
+                                          ? 'Sin ubicacion anterior'
+                                          : 'Antes: $location'
+                                    : location.isEmpty
+                                    ? 'Sin ubicacion'
+                                    : location;
+                                return Card(
+                                  child: ListTile(
+                                    leading: photos.isEmpty
+                                        ? const Icon(Icons.view_in_ar_outlined)
+                                        : ClipRRect(
+                                            borderRadius: BorderRadius.circular(
+                                              6,
+                                            ),
+                                            child: Image.network(
+                                              photos.first,
+                                              width: 54,
+                                              height: 54,
+                                              fit: BoxFit.cover,
+                                              errorBuilder: (_, _, _) =>
+                                                  const SizedBox(
+                                                    width: 54,
+                                                    child: Icon(
+                                                      Icons.view_in_ar_outlined,
+                                                    ),
+                                                  ),
+                                            ),
+                                          ),
+                                    title: Text(palletName),
+                                    subtitle: Text(
+                                      '${data['sku'] ?? ''} - ${data['productName'] ?? ''}\n'
+                                      '$boxes cajas | $locationLabel | '
+                                      '${exhausted ? 'Agotado' : status} | ${photos.length} foto(s)'
+                                      '${photoUploadStatus.isEmpty ? '' : ' | foto: $photoUploadStatus'}',
+                                    ),
+                                    isThreeLine: true,
+                                    trailing: exhausted
+                                        ? const Icon(Icons.history)
+                                        : PopupMenuButton<String>(
+                                            onSelected: (value) {
+                                              if (value == 'edit') {
+                                                _editPallet(
+                                                  context,
+                                                  doc.id,
+                                                  data,
+                                                );
+                                              }
+                                              if (value == 'deplete') {
+                                                _depletePallet(
+                                                  context,
+                                                  doc.id,
+                                                  data,
+                                                );
+                                              }
+                                            },
+                                            itemBuilder: (context) => const [
+                                              PopupMenuItem(
+                                                value: 'edit',
+                                                child: ListTile(
+                                                  leading: Icon(
+                                                    Icons.edit_outlined,
+                                                  ),
+                                                  title: Text('Editar'),
+                                                  contentPadding:
+                                                      EdgeInsets.zero,
+                                                ),
+                                              ),
+                                              PopupMenuItem(
+                                                value: 'deplete',
+                                                child: ListTile(
+                                                  leading: Icon(
+                                                    Icons.remove_circle_outline,
+                                                  ),
+                                                  title: Text('Dar de baja'),
+                                                  contentPadding:
+                                                      EdgeInsets.zero,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                    onTap: () =>
+                                        _editPallet(context, doc.id, data),
+                                  ),
+                                );
+                              },
+                            ),
+                    ),
+                  ],
                 );
               },
             ),
