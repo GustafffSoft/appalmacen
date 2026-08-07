@@ -14,6 +14,8 @@ class ScanInvoicePage extends StatefulWidget {
 }
 
 class _ScanInvoicePageState extends State<ScanInvoicePage> {
+  static const _maxImages = 5;
+
   final _invoiceFiles = <XFile>[];
   final _results = <_ScannedInvoiceResult>[];
   _ScanMode _mode = _ScanMode.multipleInvoices;
@@ -22,6 +24,12 @@ class _ScanInvoicePageState extends State<ScanInvoicePage> {
   String? _message;
 
   Future<void> _addInvoiceFromCamera() async {
+    if (_invoiceFiles.length >= _maxImages) {
+      setState(() {
+        _message = 'Puedes escanear un maximo de $_maxImages imagenes.';
+      });
+      return;
+    }
     final file = await ImagePicker().pickImage(
       source: ImageSource.camera,
       imageQuality: 85,
@@ -37,12 +45,15 @@ class _ScanInvoicePageState extends State<ScanInvoicePage> {
   Future<void> _pickInvoicesFromGallery() async {
     final files = await ImagePicker().pickMultiImage(imageQuality: 85);
     if (files.isEmpty) return;
+    final selectedFiles = files.take(_maxImages).toList();
     setState(() {
       _invoiceFiles
         ..clear()
-        ..addAll(files);
+        ..addAll(selectedFiles);
       _results.clear();
-      _message = '${_invoiceFiles.length} invoice(s) listos para escanear.';
+      _message = files.length > _maxImages
+          ? 'Solo se permiten $_maxImages imagenes. Se seleccionaron las primeras $_maxImages.'
+          : '${_invoiceFiles.length} invoice(s) listos para escanear.';
     });
   }
 
@@ -59,6 +70,12 @@ class _ScanInvoicePageState extends State<ScanInvoicePage> {
     if (_invoiceFiles.isEmpty) {
       setState(() {
         _message = 'Toma una foto o carga imagenes de invoices primero.';
+      });
+      return;
+    }
+    if (_invoiceFiles.length > _maxImages) {
+      setState(() {
+        _message = 'Puedes escanear un maximo de $_maxImages imagenes.';
       });
       return;
     }
@@ -196,9 +213,12 @@ class _ScanInvoicePageState extends State<ScanInvoicePage> {
           const SizedBox(height: 12),
           _PhotoActions(
             invoiceCount: _invoiceFiles.length,
+            maxImages: _maxImages,
             mode: _mode,
             scanning: _scanning,
-            onCamera: _addInvoiceFromCamera,
+            onCamera: _invoiceFiles.length >= _maxImages
+                ? null
+                : _addInvoiceFromCamera,
             onGallery: _pickInvoicesFromGallery,
             onClear: _invoiceFiles.isEmpty ? null : _clearAll,
           ),
@@ -282,6 +302,7 @@ class _ScannedInvoiceResult {
 class _PhotoActions extends StatelessWidget {
   const _PhotoActions({
     required this.invoiceCount,
+    required this.maxImages,
     required this.mode,
     required this.scanning,
     required this.onCamera,
@@ -290,9 +311,10 @@ class _PhotoActions extends StatelessWidget {
   });
 
   final int invoiceCount;
+  final int maxImages;
   final _ScanMode mode;
   final bool scanning;
-  final VoidCallback onCamera;
+  final VoidCallback? onCamera;
   final VoidCallback onGallery;
   final VoidCallback? onClear;
 
@@ -311,8 +333,8 @@ class _PhotoActions extends StatelessWidget {
                 Expanded(
                   child: Text(
                     mode == _ScanMode.multipleInvoices
-                        ? '$invoiceCount invoice(s) seleccionados'
-                        : '$invoiceCount pagina(s) seleccionadas',
+                        ? '$invoiceCount/$maxImages invoice(s) seleccionados'
+                        : '$invoiceCount/$maxImages pagina(s) seleccionadas',
                   ),
                 ),
                 if (onClear != null)

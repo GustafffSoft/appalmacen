@@ -6,6 +6,8 @@ import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/foundation.dart';
 import 'package:image_picker/image_picker.dart';
 
+import '../utils/product_document_id.dart';
+
 class FirebaseService {
   FirebaseService({FirebaseFirestore? firestore, FirebaseStorage? storage})
     : _firestore = firestore ?? FirebaseFirestore.instance,
@@ -110,7 +112,9 @@ class FirebaseService {
     required double heightIn,
     required double weightKg,
   }) async {
-    final docRef = _firestore.collection('products').doc(sku);
+    final docRef = _firestore
+        .collection('products')
+        .doc(productDocumentId(sku));
     final existing = await docRef.get();
     if (existing.exists) {
       throw Exception(
@@ -166,7 +170,10 @@ class FirebaseService {
       'createdAt': FieldValue.serverTimestamp(),
       'updatedAt': FieldValue.serverTimestamp(),
     };
-    await _firestore.collection('products').doc(sku).set(product);
+    await _firestore
+        .collection('products')
+        .doc(productDocumentId(sku))
+        .set(product);
     return {'sku': sku, 'name': cleanName};
   }
 
@@ -184,7 +191,7 @@ class FirebaseService {
     required double heightIn,
     required double weightKg,
   }) async {
-    await _firestore.collection('products').doc(sku).set({
+    await _firestore.collection('products').doc(productDocumentId(sku)).set({
       'sku': sku,
       'name': name,
       'secondName': secondName,
@@ -221,7 +228,9 @@ class FirebaseService {
       );
     }
 
-    final productRef = _firestore.collection('products').doc(cleanSku);
+    final productRef = _firestore
+        .collection('products')
+        .doc(productDocumentId(cleanSku));
     await _firestore.runTransaction((transaction) async {
       final productSnapshot = await transaction.get(productRef);
       if (!productSnapshot.exists) {
@@ -290,10 +299,14 @@ class FirebaseService {
       'createdAt': FieldValue.serverTimestamp(),
       'updatedAt': FieldValue.serverTimestamp(),
     }, SetOptions(merge: true));
-    batch.set(_firestore.collection('products').doc(sku), {
-      'stockQty': FieldValue.increment(boxes),
-      'updatedAt': FieldValue.serverTimestamp(),
-    }, SetOptions(merge: true));
+    batch.set(
+      _firestore.collection('products').doc(productDocumentId(sku)),
+      {
+        'stockQty': FieldValue.increment(boxes),
+        'updatedAt': FieldValue.serverTimestamp(),
+      },
+      SetOptions(merge: true),
+    );
     await batch.commit().timeout(const Duration(seconds: 20));
 
     unawaited(
@@ -354,7 +367,9 @@ class FirebaseService {
       final sku = data['sku']?.toString() ?? '';
       if (boxes <= 0 || sku.isEmpty) return 0;
 
-      final productRef = _firestore.collection('products').doc(sku);
+      final productRef = _firestore
+          .collection('products')
+          .doc(productDocumentId(sku));
       final productSnapshot = await transaction.get(productRef);
       final currentStock =
           (productSnapshot.data()?['stockQty'] as num?)?.toInt() ?? 0;

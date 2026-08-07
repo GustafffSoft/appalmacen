@@ -24,7 +24,10 @@ from app.services.firebase_service import (
     upsert_products,
 )
 from app.services.openai_service import research_product_with_web
-from app.services.product_catalog_scan_service import scan_product_catalog
+from app.services.product_catalog_scan_service import (
+    ProductCatalogScanError,
+    scan_product_catalog,
+)
 from app.services.product_service import SEED_PRODUCTS
 
 router = APIRouter(
@@ -42,7 +45,13 @@ router = APIRouter(
 async def scan_product_catalog_route(
     request: ScanProductCatalogRequest,
 ) -> ScanProductCatalogResponse:
-    return await scan_product_catalog(request)
+    try:
+        return await scan_product_catalog(request)
+    except ProductCatalogScanError as error:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(error),
+        ) from error
 
 
 @router.get("", response_model=list[Product])
@@ -115,3 +124,14 @@ async def research_product(
     response = ProductResearchResponse(**payload)
     update_product_research(sku, response.model_dump(mode="json"))
     return response
+
+
+@router.post(
+    "/research",
+    response_model=ProductResearchResponse,
+    dependencies=[Depends(require_roles("admin", "warehouse"))],
+)
+async def research_product_from_body(
+    request: ProductResearchRequest,
+) -> ProductResearchResponse:
+    return await research_product(request.sku, request)

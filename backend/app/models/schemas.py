@@ -1,5 +1,7 @@
 from pydantic import BaseModel, Field
 
+MAX_SCAN_IMAGES = 5
+
 
 class PalletRequest(BaseModel):
     lengthCm: float = Field(..., gt=0)
@@ -205,7 +207,11 @@ class RegisterInvoiceResponse(BaseModel):
 
 class ScanInvoicePagesRequest(BaseModel):
     invoiceNumber: str | None = None
-    pages: list[InvoicePageRef]
+    pages: list[InvoicePageRef] = Field(
+        ...,
+        min_length=1,
+        max_length=MAX_SCAN_IMAGES,
+    )
 
 
 class ScanInvoicePagesResponse(BaseModel):
@@ -219,7 +225,11 @@ class ScanInvoicePagesResponse(BaseModel):
 
 
 class ScanProductCatalogRequest(BaseModel):
-    pages: list[InvoicePageRef]
+    pages: list[InvoicePageRef] = Field(
+        ...,
+        min_length=1,
+        max_length=MAX_SCAN_IMAGES,
+    )
 
 
 class ScannedCatalogProduct(BaseModel):

@@ -1,5 +1,6 @@
 ﻿from __future__ import annotations
 
+import base64
 import json
 from pathlib import Path
 from typing import Any
@@ -163,10 +164,23 @@ def list_products() -> list[dict[str, Any]]:
     return result
 
 
+def _product_document_id(sku: str) -> str:
+    clean_sku = str(sku).strip().upper()
+    prefix = "__SKU_B64__"
+    if "/" not in clean_sku and not clean_sku.startswith(prefix):
+        return clean_sku
+
+    encoded = base64.urlsafe_b64encode(clean_sku.encode("utf-8")).decode("ascii")
+    return f"{prefix}{encoded.rstrip('=')}"
+
+
 def get_product_by_sku(sku: str) -> dict[str, Any] | None:
     db = get_firestore_client()
     clean_sku = str(sku).strip().upper()
-    doc = db.collection("products").document(clean_sku).get()
+    if not clean_sku:
+        return None
+
+    doc = db.collection("products").document(_product_document_id(clean_sku)).get()
     if doc.exists:
         return doc.to_dict()
 
@@ -268,8 +282,8 @@ def merge_products(
 
     db = get_firestore_client()
     products = db.collection("products")
-    source_ref = products.document(source_sku)
-    target_ref = products.document(target_sku)
+    source_ref = products.document(_product_document_id(source_sku))
+    target_ref = products.document(_product_document_id(target_sku))
     source_snapshot = source_ref.get()
     target_snapshot = target_ref.get()
     if not source_snapshot.exists:
@@ -476,7 +490,10 @@ def update_product_research(sku: str, research: dict[str, Any]) -> None:
         payload["weightKg"] = round(
             float(existing.get("weightKg") or DEFAULT_UNKNOWN_PRODUCT["weightKg"]), 2
         )
-    db.collection("products").document(clean_sku).set(payload, merge=True)
+    db.collection("products").document(_product_document_id(clean_sku)).set(
+        payload,
+        merge=True,
+    )
 
 
 def get_products_by_skus(skus: list[str]) -> dict[str, dict[str, Any]]:
@@ -526,7 +543,7 @@ def ensure_product_exists(
         "source": source,
     }
 
-    db.collection("products").document(sku).set(
+    db.collection("products").document(_product_document_id(sku)).set(
         payload,
         merge=True,
     )
@@ -564,7 +581,9 @@ def create_scanned_catalog_product_if_missing(product: dict[str, Any]) -> bool:
         "createdAt": firestore.SERVER_TIMESTAMP,
         "updatedAt": firestore.SERVER_TIMESTAMP,
     }
-    get_firestore_client().collection("products").document(sku).set(payload)
+    get_firestore_client().collection("products").document(
+        _product_document_id(sku)
+    ).set(payload)
     return True
 
 
@@ -573,8 +592,8 @@ def upsert_products(products: list[dict[str, Any]]) -> int:
     batch = db.batch()
     count = 0
     for product in products:
-        sku = str(product["sku"]).upper()
-        doc_ref = db.collection("products").document(sku)
+        sku = str(product["sku"]).strip().upper()
+        doc_ref = db.collection("products").document(_product_document_id(sku))
         payload = dict(product)
         payload["sku"] = sku
         payload["createdAt"] = firestore.SERVER_TIMESTAMP

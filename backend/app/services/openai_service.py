@@ -18,6 +18,115 @@ class OpenAIConfigurationError(RuntimeError):
     pass
 
 
+_CATALOG_RESPONSE_FORMAT = {
+    "type": "json_schema",
+    "name": "catalog_products",
+    "strict": True,
+    "schema": {
+        "type": "object",
+        "properties": {
+            "products": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "sku": {"type": "string"},
+                        "description": {"type": "string"},
+                        "secondName": {"type": "string"},
+                        "category": {"type": "string"},
+                        "brand": {"type": "string"},
+                        "manufacturer": {"type": "string"},
+                        "packDescription": {"type": "string"},
+                        "unitsPerCase": {"type": "integer"},
+                        "alternateSkus": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                        },
+                        "barcode": {"type": "string"},
+                        "color": {"type": "string"},
+                        "material": {"type": "string"},
+                        "size": {"type": "string"},
+                    },
+                    "required": [
+                        "sku",
+                        "description",
+                        "secondName",
+                        "category",
+                        "brand",
+                        "manufacturer",
+                        "packDescription",
+                        "unitsPerCase",
+                        "alternateSkus",
+                        "barcode",
+                        "color",
+                        "material",
+                        "size",
+                    ],
+                    "additionalProperties": False,
+                },
+            }
+        },
+        "required": ["products"],
+        "additionalProperties": False,
+    },
+}
+
+_INVOICE_RESPONSE_FORMAT = {
+    "type": "json_schema",
+    "name": "invoice_products",
+    "strict": True,
+    "schema": {
+        "type": "object",
+        "properties": {
+            "invoiceNumber": {"type": "string"},
+            "invoiceDate": {"type": "string"},
+            "storeNumber": {"type": "string"},
+            "storeName": {"type": "string"},
+            "address": {"type": "string"},
+            "items": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "sku": {"type": "string"},
+                        "description": {"type": "string"},
+                        "qty": {"type": "integer"},
+                        "rate": {"type": "number"},
+                        "amount": {"type": "number"},
+                        "category": {"type": "string"},
+                        "unitsPerCase": {"type": "integer"},
+                        "alternateSkus": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                        },
+                    },
+                    "required": [
+                        "sku",
+                        "description",
+                        "qty",
+                        "rate",
+                        "amount",
+                        "category",
+                        "unitsPerCase",
+                        "alternateSkus",
+                    ],
+                    "additionalProperties": False,
+                },
+            },
+        },
+        "required": [
+            "invoiceNumber",
+            "invoiceDate",
+            "storeNumber",
+            "storeName",
+            "address",
+            "items",
+        ],
+        "additionalProperties": False,
+    },
+}
+
+
 def _build_prompt(request: GenerateSalesMessageRequest) -> str:
     product_lines = []
     for product in request.products:
@@ -340,6 +449,7 @@ async def extract_invoice_products_with_ai(
                 "model": settings.openai_model,
                 "instructions": instructions,
                 "input": input_text,
+                "text": {"format": _INVOICE_RESPONSE_FORMAT},
             },
         )
 
@@ -391,7 +501,7 @@ async def extract_invoice_products_from_images_with_ai(
             }
         )
 
-    async with httpx.AsyncClient(timeout=60) as client:
+    async with httpx.AsyncClient(timeout=90) as client:
         response = await client.post(
             "https://api.openai.com/v1/responses",
             headers={
@@ -407,6 +517,7 @@ async def extract_invoice_products_from_images_with_ai(
                         "content": content,
                     }
                 ],
+                "text": {"format": _INVOICE_RESPONSE_FORMAT},
             },
         )
 
@@ -417,6 +528,8 @@ async def extract_invoice_products_from_images_with_ai(
 
 async def extract_catalog_products_from_images_with_ai(
     image_urls: list[str],
+    *,
+    retry_for_empty: bool = False,
 ) -> dict[str, object]:
     settings = get_settings()
     if not settings.openai_api_key:
@@ -443,7 +556,13 @@ async def extract_catalog_products_from_images_with_ai(
     content: list[dict[str, object]] = [
         {
             "type": "input_text",
-            "text": "Extract product catalog data only. Do not extract prices or invoice data.",
+            "text": (
+                "A previous analysis found no products. Inspect every visible table "
+                "row carefully and return all rows that have both an item code and "
+                "a product description. Do not invent unreadable values."
+                if retry_for_empty
+                else "Extract product catalog data only. Do not extract prices or invoice data."
+            ),
         }
     ]
     for image_url in image_urls:
@@ -451,7 +570,7 @@ async def extract_catalog_products_from_images_with_ai(
             {"type": "input_image", "image_url": image_url, "detail": "high"}
         )
 
-    async with httpx.AsyncClient(timeout=60) as client:
+    async with httpx.AsyncClient(timeout=90) as client:
         response = await client.post(
             "https://api.openai.com/v1/responses",
             headers={
@@ -462,6 +581,7 @@ async def extract_catalog_products_from_images_with_ai(
                 "model": settings.openai_model,
                 "instructions": instructions,
                 "input": [{"role": "user", "content": content}],
+                "text": {"format": _CATALOG_RESPONSE_FORMAT},
             },
         )
 

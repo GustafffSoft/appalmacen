@@ -1,6 +1,7 @@
 ﻿from __future__ import annotations
 
 import json
+import logging
 import re
 from datetime import datetime
 from difflib import SequenceMatcher
@@ -24,6 +25,8 @@ from app.services.openai_service import (
     extract_invoice_products_from_images_with_ai,
     extract_invoice_products_with_ai,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def _normalize_items(items: list[dict]) -> list[dict]:
@@ -379,6 +382,11 @@ async def scan_invoice_pages(request: ScanInvoicePagesRequest) -> ScanInvoicePag
     except Exception as exc:  # noqa: BLE001
         parsed['visionEnhanced'] = False
         vision_error = str(exc)
+        logger.exception(
+            'Invoice vision analysis failed page_count=%s error_type=%s',
+            len(request.pages),
+            type(exc).__name__,
+        )
     vision_ms = round((perf_counter() - vision_started_at) * 1000)
 
     download_ocr_started_at = perf_counter()
@@ -430,6 +438,11 @@ async def scan_invoice_pages(request: ScanInvoicePagesRequest) -> ScanInvoicePag
         except Exception as exc:  # noqa: BLE001
             parsed['aiEnhanced'] = False
             ai_error = str(exc)
+            logger.exception(
+                'Invoice OCR analysis failed page_count=%s error_type=%s',
+                len(request.pages),
+                type(exc).__name__,
+            )
         ai_ms = round((perf_counter() - ai_started_at) * 1000)
     else:
         parsed['aiEnhanced'] = True
@@ -489,7 +502,23 @@ async def scan_invoice_pages(request: ScanInvoicePagesRequest) -> ScanInvoicePag
             f'{"si" if store_ref else "no"}.{catalog_note}{detected_note}{ai_note} Revisa los datos antes de registrar.'
         )
     else:
-        message = 'OCR ejecutado, pero no se detectaron lineas confiables.'
+        message = (
+            'No se detectaron productos confiables. Toma una foto clara, recta '
+            'y completa; verifica que se vean las columnas de codigo y descripcion.'
+        )
+
+    logger.info(
+        'Invoice scan completed pages=%s items=%s vision_ms=%s ocr_ms=%s '
+        'fallback_ai_ms=%s total_ms=%s vision_error=%s fallback_error=%s',
+        len(request.pages),
+        item_count,
+        vision_ms,
+        download_ocr_ms,
+        ai_ms,
+        total_ms,
+        bool(vision_error),
+        bool(ai_error),
+    )
 
     _write_scan_debug_log(
         invoice_number=request.invoiceNumber,

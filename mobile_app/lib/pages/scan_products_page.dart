@@ -13,12 +13,20 @@ class ScanProductsPage extends StatefulWidget {
 }
 
 class _ScanProductsPageState extends State<ScanProductsPage> {
+  static const _maxImages = 5;
+
   final _files = <XFile>[];
   List<Map<String, dynamic>> _products = [];
   bool _scanning = false;
   String? _message;
 
   Future<void> _takePhoto() async {
+    if (_files.length >= _maxImages) {
+      setState(() {
+        _message = 'Puedes escanear un maximo de $_maxImages imagenes.';
+      });
+      return;
+    }
     final file = await ImagePicker().pickImage(
       source: ImageSource.camera,
       imageQuality: 85,
@@ -34,12 +42,15 @@ class _ScanProductsPageState extends State<ScanProductsPage> {
   Future<void> _pickImages() async {
     final files = await ImagePicker().pickMultiImage(imageQuality: 85);
     if (files.isEmpty) return;
+    final selectedFiles = files.take(_maxImages).toList();
     setState(() {
       _files
         ..clear()
-        ..addAll(files);
+        ..addAll(selectedFiles);
       _products = [];
-      _message = '${_files.length} imagen(es) seleccionadas.';
+      _message = files.length > _maxImages
+          ? 'Solo se permiten $_maxImages imagenes. Se seleccionaron las primeras $_maxImages.'
+          : '${_files.length} imagen(es) seleccionadas.';
     });
   }
 
@@ -53,6 +64,12 @@ class _ScanProductsPageState extends State<ScanProductsPage> {
 
   Future<void> _scan() async {
     if (_files.isEmpty) return;
+    if (_files.length > _maxImages) {
+      setState(() {
+        _message = 'Puedes escanear un maximo de $_maxImages imagenes.';
+      });
+      return;
+    }
     final firebaseService = context.read<FirebaseService>();
     final orderService = context.read<OrderService>();
     setState(() {
@@ -113,7 +130,7 @@ class _ScanProductsPageState extends State<ScanProductsPage> {
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
-                          '${_files.length} imagen(es) seleccionadas',
+                          '${_files.length}/$_maxImages imagen(es) seleccionadas',
                         ),
                       ),
                       if (_files.isNotEmpty)
@@ -130,7 +147,9 @@ class _ScanProductsPageState extends State<ScanProductsPage> {
                     runSpacing: 8,
                     children: [
                       OutlinedButton.icon(
-                        onPressed: _scanning ? null : _takePhoto,
+                        onPressed: _scanning || _files.length >= _maxImages
+                            ? null
+                            : _takePhoto,
                         icon: const Icon(Icons.camera_alt_outlined),
                         label: const Text('Tomar foto'),
                       ),

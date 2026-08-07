@@ -326,7 +326,7 @@ class _ProductsPageState extends State<ProductsPage> {
   Future<void> _researchProduct(Map<String, dynamic> data, String sku) async {
     setState(() => _researchingSku = sku);
     try {
-      final uri = Uri.parse('$backendBaseUrl/api/v1/products/$sku/research');
+      final uri = Uri.parse('$backendBaseUrl/api/v1/products/research');
       final response = await _apiClient.postJson(
         uri,
         payload: {
