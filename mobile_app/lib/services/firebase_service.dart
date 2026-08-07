@@ -25,6 +25,10 @@ class FirebaseService {
     return _firestore.collection('products').orderBy('name').snapshots();
   }
 
+  Future<QuerySnapshot<Map<String, dynamic>>> getProducts() {
+    return _firestore.collection('products').orderBy('name').get();
+  }
+
   Stream<QuerySnapshot<Map<String, dynamic>>> watchProspects() {
     return _firestore
         .collection('prospects')

@@ -23,3 +23,10 @@ class ApiSecurityTests(TestCase):
     def test_invoice_scan_requires_authentication(self) -> None:
         response = self.client.post("/api/v1/invoices/scan-pages", json={"pages": []})
         self.assertEqual(response.status_code, 401)
+
+    def test_product_merge_requires_authentication(self) -> None:
+        response = self.client.post(
+            "/api/v1/products/merge",
+            json={"sourceSku": "MAN-TEST", "targetSku": "REAL-TEST"},
+        )
+        self.assertEqual(response.status_code, 401)

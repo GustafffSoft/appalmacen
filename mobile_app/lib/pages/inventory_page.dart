@@ -40,12 +40,16 @@ class _InventoryPageState extends State<InventoryPage> {
     final sku = (data['sku']?.toString() ?? docId).toLowerCase();
     final name = (data['name']?.toString() ?? '').toLowerCase();
     final secondName = (data['secondName']?.toString() ?? '').toLowerCase();
+    final alternateNames = (data['alternateNames'] as List<dynamic>? ?? [])
+        .map((item) => item.toString().toLowerCase())
+        .join(' ');
     final alternateSkus = (data['alternateSkus'] as List<dynamic>? ?? [])
         .map((item) => item.toString().toLowerCase())
         .join(' ');
     return sku.contains(_query) ||
         name.contains(_query) ||
         secondName.contains(_query) ||
+        alternateNames.contains(_query) ||
         alternateSkus.contains(_query);
   }
 

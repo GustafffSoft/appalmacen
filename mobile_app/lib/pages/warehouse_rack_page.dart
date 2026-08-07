@@ -251,12 +251,17 @@ class _WarehouseRackPageState extends State<WarehouseRackPage> {
                         final secondName =
                             (data['secondName']?.toString() ?? '')
                                 .toLowerCase();
+                        final alternateNames =
+                            (data['alternateNames'] as List<dynamic>? ?? [])
+                                .map((item) => item.toString().toLowerCase())
+                                .join(' ');
                         final alternateSkus =
                             (data['alternateSkus'] as List<dynamic>? ?? [])
                                 .map((item) => item.toString().toLowerCase())
                                 .join(' ');
                         return name.contains(productQuery) ||
                             secondName.contains(productQuery) ||
+                            alternateNames.contains(productQuery) ||
                             alternateSkus.contains(productQuery) ||
                             sku.toLowerCase().contains(productQuery);
                       })

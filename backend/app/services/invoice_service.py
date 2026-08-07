@@ -107,9 +107,17 @@ def _annotate_description_candidates(
     known_by_description: list[tuple[str, str, dict]] = []
     for product in products:
         sku = str(product.get('sku') or '').strip().upper()
-        name = str(product.get('name') or '').strip()
-        if sku and name:
-            known_by_description.append((sku, _normalize_match_text(name), product))
+        names = [
+            product.get('name'),
+            product.get('secondName'),
+            *(product.get('alternateNames') or []),
+        ]
+        for raw_name in names:
+            name = str(raw_name or '').strip()
+            if sku and name:
+                known_by_description.append(
+                    (sku, _normalize_match_text(name), product)
+                )
 
     normalized_items: list[dict] = []
     for item in items:

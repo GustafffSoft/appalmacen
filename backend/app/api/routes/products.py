@@ -1,7 +1,13 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, status
 
-from app.api.dependencies.auth import require_active_user, require_roles
+from app.api.dependencies.auth import (
+    AuthenticatedUser,
+    require_active_user,
+    require_roles,
+)
 from app.models.schemas import (
+    MergeProductsRequest,
+    MergeProductsResponse,
     Product,
     ProductResearchRequest,
     ProductResearchResponse,
@@ -10,8 +16,10 @@ from app.models.schemas import (
     SeedProductsResponse,
 )
 from app.services.firebase_service import (
+    ProductMergeError,
     get_product_by_sku,
     list_products,
+    merge_products,
     update_product_research,
     upsert_products,
 )
@@ -52,6 +60,26 @@ def seed_products() -> SeedProductsResponse:
     return SeedProductsResponse(
         inserted=inserted, skus=[str(p["sku"]) for p in SEED_PRODUCTS]
     )
+
+
+@router.post("/merge", response_model=MergeProductsResponse)
+def merge_products_route(
+    request: MergeProductsRequest,
+    user: AuthenticatedUser = Depends(require_roles("admin")),
+) -> MergeProductsResponse:
+    try:
+        result = merge_products(
+            request.sourceSku,
+            request.targetSku,
+            actor_uid=user.uid,
+            actor_email=user.email,
+        )
+    except ProductMergeError as error:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(error),
+        ) from error
+    return MergeProductsResponse(**result)
 
 
 @router.post(

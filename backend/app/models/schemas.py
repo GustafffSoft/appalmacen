@@ -23,11 +23,27 @@ class Product(BaseModel):
     sku: str
     name: str
     secondName: str | None = None
+    alternateNames: list[str] = Field(default_factory=list)
     lengthCm: float
     widthCm: float
     heightCm: float
     weightKg: float
     imageRef: str | None = None
+
+
+class MergeProductsRequest(BaseModel):
+    sourceSku: str = Field(..., min_length=1)
+    targetSku: str = Field(..., min_length=1)
+
+
+class MergeProductsResponse(BaseModel):
+    sourceSku: str
+    targetSku: str
+    targetName: str
+    movedPallets: int
+    movedSupplierPrices: int
+    stockQty: int
+    alternateNames: list[str] = Field(default_factory=list)
 
 
 class ProductResearchRequest(BaseModel):

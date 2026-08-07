@@ -190,6 +190,180 @@ def get_product_by_sku(sku: str) -> dict[str, Any] | None:
     return None
 
 
+class ProductMergeError(ValueError):
+    pass
+
+
+def _clean_aliases(values: list[Any], excluded: str = "") -> list[str]:
+    excluded_key = excluded.strip().casefold()
+    aliases: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        alias = str(value or "").strip()
+        key = alias.casefold()
+        if not alias or key == excluded_key or key in seen:
+            continue
+        seen.add(key)
+        aliases.append(alias)
+    return aliases
+
+
+def _is_manual_product(sku: str, product: dict[str, Any]) -> bool:
+    return sku.startswith("MAN-") or (
+        str(product.get("creationSource") or "").strip() == "warehouse_pallet_entry"
+    )
+
+
+def _build_product_merge_payload(
+    source_sku: str,
+    source: dict[str, Any],
+    target_sku: str,
+    target: dict[str, Any],
+) -> dict[str, Any]:
+    target_name = str(target.get("name") or "").strip()
+    alternate_names = _clean_aliases(
+        [
+            *(target.get("alternateNames") or []),
+            source.get("name"),
+            source.get("secondName"),
+            *(source.get("alternateNames") or []),
+        ],
+        excluded=target_name,
+    )
+    alternate_skus = [
+        value.upper()
+        for value in _clean_aliases(
+            [
+                *(target.get("alternateSkus") or []),
+                source_sku,
+                *(source.get("alternateSkus") or []),
+            ],
+            excluded=target_sku,
+        )
+    ]
+    source_stock = max(0, int(source.get("stockQty") or 0))
+    target_stock = max(0, int(target.get("stockQty") or 0))
+    return {
+        "alternateNames": alternate_names,
+        "alternateSkus": alternate_skus,
+        "stockQty": source_stock + target_stock,
+        "lastMergedFromSku": source_sku,
+        "updatedAt": firestore.SERVER_TIMESTAMP,
+    }
+
+
+def merge_products(
+    source_sku: str,
+    target_sku: str,
+    *,
+    actor_uid: str,
+    actor_email: str,
+) -> dict[str, Any]:
+    source_sku = str(source_sku).strip().upper()
+    target_sku = str(target_sku).strip().upper()
+    if not source_sku or not target_sku:
+        raise ProductMergeError("Selecciona ambos productos.")
+    if source_sku == target_sku:
+        raise ProductMergeError("Los productos deben ser diferentes.")
+
+    db = get_firestore_client()
+    products = db.collection("products")
+    source_ref = products.document(source_sku)
+    target_ref = products.document(target_sku)
+    source_snapshot = source_ref.get()
+    target_snapshot = target_ref.get()
+    if not source_snapshot.exists:
+        raise ProductMergeError(f"El producto provisional {source_sku} no existe.")
+    if not target_snapshot.exists:
+        raise ProductMergeError(f"El producto definitivo {target_sku} no existe.")
+
+    source = source_snapshot.to_dict() or {}
+    target = target_snapshot.to_dict() or {}
+    if not _is_manual_product(source_sku, source):
+        raise ProductMergeError(
+            "El producto de origen no es un producto provisional creado manualmente."
+        )
+    if _is_manual_product(target_sku, target):
+        raise ProductMergeError(
+            "El producto definitivo debe tener un SKU real, no un SKU provisional."
+        )
+
+    source_pallets = list(
+        db.collection("warehouse_pallets")
+        .where(filter=FieldFilter("sku", "==", source_sku))
+        .stream()
+    )
+    supplier_prices = list(
+        db.collection("supplier_prices")
+        .where(filter=FieldFilter("productSku", "==", source_sku))
+        .stream()
+    )
+    write_count = len(source_pallets) + len(supplier_prices) + 3
+    if write_count > 500:
+        raise ProductMergeError(
+            "Este producto tiene demasiados registros relacionados para mezclarlo de una vez."
+        )
+
+    target_payload = _build_product_merge_payload(
+        source_sku,
+        source,
+        target_sku,
+        target,
+    )
+    target_name = str(target.get("name") or target_sku).strip()
+    batch = db.batch()
+    batch.set(target_ref, target_payload, merge=True)
+    for pallet in source_pallets:
+        pallet_data = pallet.to_dict() or {}
+        pallet_payload: dict[str, Any] = {
+            "sku": target_sku,
+            "productName": target_name,
+            "mergedFromSku": source_sku,
+            "updatedAt": firestore.SERVER_TIMESTAMP,
+        }
+        pallet_name = str(pallet_data.get("palletName") or "").strip()
+        if not pallet_name or pallet_name == f"Pallet {source_sku}":
+            pallet_payload["palletName"] = f"Pallet {target_sku}"
+        batch.set(pallet.reference, pallet_payload, merge=True)
+    for supplier_price in supplier_prices:
+        batch.set(
+            supplier_price.reference,
+            {
+                "productSku": target_sku,
+                "updatedAt": firestore.SERVER_TIMESTAMP,
+            },
+            merge=True,
+        )
+
+    merge_event_ref = db.collection("product_merges").document()
+    batch.set(
+        merge_event_ref,
+        {
+            "sourceSku": source_sku,
+            "sourceName": str(source.get("name") or "").strip(),
+            "targetSku": target_sku,
+            "targetName": target_name,
+            "movedPallets": len(source_pallets),
+            "movedSupplierPrices": len(supplier_prices),
+            "stockQty": target_payload["stockQty"],
+            "actorUid": actor_uid,
+            "actorEmail": actor_email,
+            "createdAt": firestore.SERVER_TIMESTAMP,
+        },
+    )
+    batch.delete(source_ref)
+    batch.commit()
+    return {
+        "sourceSku": source_sku,
+        "targetSku": target_sku,
+        "targetName": target_name,
+        "movedPallets": len(source_pallets),
+        "movedSupplierPrices": len(supplier_prices),
+        "stockQty": target_payload["stockQty"],
+        "alternateNames": target_payload["alternateNames"],
+    }
+
+
 def update_product_research(sku: str, research: dict[str, Any]) -> None:
     db = get_firestore_client()
     clean_sku = str(sku).strip().upper()

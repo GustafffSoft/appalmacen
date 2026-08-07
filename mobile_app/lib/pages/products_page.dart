@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -6,6 +8,8 @@ import '../config.dart';
 import '../services/backend_api_client.dart';
 import '../services/firebase_service.dart';
 import 'add_product_page.dart';
+
+typedef _ProductDocument = QueryDocumentSnapshot<Map<String, dynamic>>;
 
 class ProductsPage extends StatefulWidget {
   const ProductsPage({super.key, this.canDeleteProducts = false});
@@ -21,6 +25,7 @@ class _ProductsPageState extends State<ProductsPage> {
   final _apiClient = BackendApiClient();
   String _query = '';
   String? _researchingSku;
+  bool _mergingProducts = false;
 
   @override
   void initState() {
@@ -42,6 +47,7 @@ class _ProductsPageState extends State<ProductsPage> {
       data['sku']?.toString() ?? docId,
       data['name'],
       data['secondName'],
+      ...(data['alternateNames'] as List<dynamic>? ?? []),
       data['category'],
       ...(data['alternateSkus'] as List<dynamic>? ?? []),
     ].map((value) => value?.toString().toLowerCase() ?? '').join(' ');
@@ -59,6 +65,237 @@ class _ProductsPageState extends State<ProductsPage> {
   }
 
   String _money(double value) => '\$${value.toStringAsFixed(2)}';
+
+  bool _isManualProduct(_ProductDocument document) {
+    final data = document.data();
+    final sku = (data['sku']?.toString() ?? document.id).toUpperCase();
+    return sku.startsWith('MAN-') ||
+        data['creationSource']?.toString() == 'warehouse_pallet_entry';
+  }
+
+  bool _productMatches(_ProductDocument document, String query) {
+    if (query.isEmpty) return true;
+    final data = document.data();
+    final values = [
+      data['sku']?.toString() ?? document.id,
+      data['name'],
+      data['secondName'],
+      ...(data['alternateNames'] as List<dynamic>? ?? []),
+      ...(data['alternateSkus'] as List<dynamic>? ?? []),
+    ].map((value) => value?.toString().toLowerCase() ?? '').join(' ');
+    return values.contains(query);
+  }
+
+  Future<_ProductDocument?> _selectMergeProduct({
+    required String title,
+    required List<_ProductDocument> products,
+  }) async {
+    final searchController = TextEditingController();
+    var query = '';
+    final selected = await showModalBottomSheet<_ProductDocument>(
+      context: context,
+      isScrollControlled: true,
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (context, setSheetState) {
+          final filtered = products
+              .where((product) => _productMatches(product, query))
+              .toList();
+          return SafeArea(
+            child: SizedBox(
+              height: MediaQuery.sizeOf(sheetContext).height * 0.72,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 16, 8, 8),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            title,
+                            style: Theme.of(context).textTheme.titleLarge,
+                          ),
+                        ),
+                        IconButton(
+                          tooltip: 'Cerrar',
+                          onPressed: () => Navigator.of(sheetContext).pop(),
+                          icon: const Icon(Icons.close),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                    child: TextField(
+                      controller: searchController,
+                      autofocus: true,
+                      decoration: const InputDecoration(
+                        labelText: 'Buscar por descripcion o codigo',
+                        prefixIcon: Icon(Icons.search),
+                        border: OutlineInputBorder(),
+                        isDense: true,
+                      ),
+                      onChanged: (value) => setSheetState(
+                        () => query = value.trim().toLowerCase(),
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    child: filtered.isEmpty
+                        ? const Center(
+                            child: Text('No se encontraron productos.'),
+                          )
+                        : ListView.separated(
+                            itemCount: filtered.length,
+                            separatorBuilder: (_, _) =>
+                                const Divider(height: 1),
+                            itemBuilder: (context, index) {
+                              final document = filtered[index];
+                              final data = document.data();
+                              final sku =
+                                  data['sku']?.toString() ?? document.id;
+                              final name =
+                                  data['name']?.toString() ?? 'Producto';
+                              return ListTile(
+                                leading: const Icon(Icons.inventory_2_outlined),
+                                title: Text(
+                                  name,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                subtitle: Text(sku),
+                                onTap: () =>
+                                    Navigator.of(sheetContext).pop(document),
+                              );
+                            },
+                          ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+    searchController.dispose();
+    return selected;
+  }
+
+  String _backendError(String body) {
+    try {
+      final decoded = jsonDecode(body);
+      if (decoded is Map<String, dynamic>) {
+        return decoded['detail']?.toString() ?? body;
+      }
+    } catch (_) {
+      // Keep the original backend message when it is not JSON.
+    }
+    return body;
+  }
+
+  Future<void> _mergeProducts() async {
+    if (_mergingProducts) return;
+    setState(() => _mergingProducts = true);
+    try {
+      final snapshot = await context.read<FirebaseService>().getProducts();
+      if (!mounted) return;
+      final manualProducts = snapshot.docs.where(_isManualProduct).toList();
+      if (manualProducts.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No hay productos provisionales.')),
+        );
+        return;
+      }
+
+      final source = await _selectMergeProduct(
+        title: 'Producto provisional',
+        products: manualProducts,
+      );
+      if (source == null || !mounted) return;
+      final targetProducts = snapshot.docs
+          .where((document) => !_isManualProduct(document))
+          .toList();
+      final target = await _selectMergeProduct(
+        title: 'Producto definitivo',
+        products: targetProducts,
+      );
+      if (target == null || !mounted) return;
+
+      final sourceData = source.data();
+      final targetData = target.data();
+      final sourceSku = sourceData['sku']?.toString() ?? source.id;
+      final targetSku = targetData['sku']?.toString() ?? target.id;
+      final sourceName = sourceData['name']?.toString() ?? sourceSku;
+      final targetName = targetData['name']?.toString() ?? targetSku;
+      final sourceStock = _toInt(sourceData['stockQty']);
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('Confirmar mezcla'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                sourceName,
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 8),
+                child: Center(child: Icon(Icons.arrow_downward)),
+              ),
+              Text(
+                targetName,
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                'Se moveran $sourceStock caja(s) y todos sus pallets. '
+                'El nombre provisional quedara como alias del producto definitivo.',
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('Cancelar'),
+            ),
+            FilledButton.icon(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              icon: const Icon(Icons.merge),
+              label: const Text('Mezclar'),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true || !mounted) return;
+
+      final response = await _apiClient.postJson(
+        Uri.parse('$backendBaseUrl/api/v1/products/merge'),
+        payload: {'sourceSku': sourceSku, 'targetSku': targetSku},
+      );
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw Exception(_backendError(response.body));
+      }
+      final result = jsonDecode(response.body) as Map<String, dynamic>;
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Mezcla completada: ${result['movedPallets']} pallet(s). '
+            'Existencia ${result['stockQty']} cajas.',
+          ),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('No se pudo mezclar: $error')));
+    } finally {
+      if (mounted) setState(() => _mergingProducts = false);
+    }
+  }
 
   String _statusLabel(String status) {
     switch (status) {
@@ -124,7 +361,22 @@ class _ProductsPageState extends State<ProductsPage> {
     final firebaseService = context.read<FirebaseService>();
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Productos')),
+      appBar: AppBar(
+        title: const Text('Productos'),
+        actions: [
+          if (widget.canDeleteProducts)
+            IconButton(
+              tooltip: 'Mezclar productos',
+              onPressed: _mergingProducts ? null : _mergeProducts,
+              icon: _mergingProducts
+                  ? const SizedBox.square(
+                      dimension: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.merge),
+            ),
+        ],
+      ),
       body: Column(
         children: [
           Padding(
@@ -180,6 +432,11 @@ class _ProductsPageState extends State<ProductsPage> {
                     final sku = data['sku']?.toString() ?? docs[index].id;
                     final name = data['name']?.toString() ?? 'Producto';
                     final secondName = data['secondName']?.toString();
+                    final alternateNames =
+                        (data['alternateNames'] as List<dynamic>? ?? [])
+                            .map((value) => value.toString())
+                            .where((value) => value.isNotEmpty)
+                            .toList();
                     final l = data['lengthCm'];
                     final w = data['widthCm'];
                     final h = data['heightCm'];
@@ -216,6 +473,8 @@ class _ProductsPageState extends State<ProductsPage> {
                         : (profit / salePrice) * 100;
                     final commercialLines = [
                       if (category.isNotEmpty) category,
+                      if (alternateNames.isNotEmpty)
+                        'Alias: ${alternateNames.take(2).join(', ')}',
                       'Costo ${_money(cost)}',
                       'Venta ${_money(salePrice)}',
                       'Margen ${marginPct.toStringAsFixed(1)}%',
