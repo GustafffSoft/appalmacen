@@ -67,6 +67,78 @@ class _PalletsPageState extends State<PalletsPage> {
     return urls.toList();
   }
 
+  String _photoStatusLabel(String status) {
+    return switch (status) {
+      'pending' => 'Subiendo foto',
+      'failed' => 'Foto no subida',
+      _ => '',
+    };
+  }
+
+  Future<void> _addPalletPhoto(BuildContext context, String palletId) async {
+    final source = await showModalBottomSheet<ImageSource>(
+      context: context,
+      builder: (sheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.camera_alt_outlined),
+              title: const Text('Tomar foto'),
+              onTap: () => Navigator.of(sheetContext).pop(ImageSource.camera),
+            ),
+            ListTile(
+              leading: const Icon(Icons.photo_library_outlined),
+              title: const Text('Seleccionar de la galeria'),
+              onTap: () => Navigator.of(sheetContext).pop(ImageSource.gallery),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (source == null || !context.mounted) return;
+
+    final image = await ImagePicker().pickImage(
+      source: source,
+      imageQuality: 70,
+      maxWidth: 1600,
+      maxHeight: 1600,
+    );
+    if (image == null || !context.mounted) return;
+
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.showSnackBar(
+      const SnackBar(
+        duration: Duration(seconds: 30),
+        content: Row(
+          children: [
+            SizedBox.square(
+              dimension: 18,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+            SizedBox(width: 10),
+            Text('Subiendo foto...'),
+          ],
+        ),
+      ),
+    );
+    try {
+      await context.read<FirebaseService>().addWarehousePalletImages(
+        palletId: palletId,
+        images: [image],
+      );
+      if (!context.mounted) return;
+      messenger
+        ..hideCurrentSnackBar()
+        ..showSnackBar(const SnackBar(content: Text('Foto guardada.')));
+    } catch (error) {
+      if (!context.mounted) return;
+      messenger
+        ..hideCurrentSnackBar()
+        ..showSnackBar(SnackBar(content: Text('No se pudo subir: $error')));
+    }
+  }
+
   Future<void> _editPallet(
     BuildContext context,
     String palletId,
@@ -419,6 +491,9 @@ class _PalletsPageState extends State<PalletsPage> {
                                 final status = data['status']?.toString() ?? '';
                                 final photoUploadStatus =
                                     data['photoUploadStatus']?.toString() ?? '';
+                                final photoStatusLabel = _photoStatusLabel(
+                                  photoUploadStatus,
+                                );
                                 final location = exhausted
                                     ? data['previousLocationCode']
                                               ?.toString() ??
@@ -438,7 +513,11 @@ class _PalletsPageState extends State<PalletsPage> {
                                 return Card(
                                   child: ListTile(
                                     leading: photos.isEmpty
-                                        ? const Icon(Icons.view_in_ar_outlined)
+                                        ? Icon(
+                                            photoUploadStatus == 'failed'
+                                                ? Icons.broken_image_outlined
+                                                : Icons.view_in_ar_outlined,
+                                          )
                                         : ClipRRect(
                                             borderRadius: BorderRadius.circular(
                                               6,
@@ -462,7 +541,7 @@ class _PalletsPageState extends State<PalletsPage> {
                                       '${data['sku'] ?? ''} - ${data['productName'] ?? ''}\n'
                                       '$boxes cajas | $locationLabel | '
                                       '${exhausted ? 'Agotado' : status} | ${photos.length} foto(s)'
-                                      '${photoUploadStatus.isEmpty ? '' : ' | foto: $photoUploadStatus'}',
+                                      '${photoStatusLabel.isEmpty ? '' : ' | $photoStatusLabel'}',
                                     ),
                                     isThreeLine: true,
                                     trailing: exhausted
@@ -483,9 +562,15 @@ class _PalletsPageState extends State<PalletsPage> {
                                                   data,
                                                 );
                                               }
+                                              if (value == 'add_photo') {
+                                                _addPalletPhoto(
+                                                  context,
+                                                  doc.id,
+                                                );
+                                              }
                                             },
-                                            itemBuilder: (context) => const [
-                                              PopupMenuItem(
+                                            itemBuilder: (context) => [
+                                              const PopupMenuItem(
                                                 value: 'edit',
                                                 child: ListTile(
                                                   leading: Icon(
@@ -496,7 +581,21 @@ class _PalletsPageState extends State<PalletsPage> {
                                                       EdgeInsets.zero,
                                                 ),
                                               ),
-                                              PopupMenuItem(
+                                              if (photos.isEmpty ||
+                                                  photoUploadStatus == 'failed')
+                                                const PopupMenuItem(
+                                                  value: 'add_photo',
+                                                  child: ListTile(
+                                                    leading: Icon(
+                                                      Icons
+                                                          .add_a_photo_outlined,
+                                                    ),
+                                                    title: Text('Agregar foto'),
+                                                    contentPadding:
+                                                        EdgeInsets.zero,
+                                                  ),
+                                                ),
+                                              const PopupMenuItem(
                                                 value: 'deplete',
                                                 child: ListTile(
                                                   leading: Icon(

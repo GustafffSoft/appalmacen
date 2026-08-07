@@ -391,10 +391,22 @@ class FirebaseService {
       urls.add(await _getDownloadUrlWithRetry(ref));
     }
     if (urls.isNotEmpty) {
-      await _firestore.collection('warehouse_pallets').doc(palletId).set({
+      final palletRef = _firestore
+          .collection('warehouse_pallets')
+          .doc(palletId);
+      final palletSnapshot = await palletRef.get();
+      final currentPhotoUrl =
+          palletSnapshot.data()?['photoUrl']?.toString() ?? '';
+      final payload = <String, dynamic>{
         'photoUrls': FieldValue.arrayUnion(urls),
+        'photoUploadStatus': 'complete',
+        'photoUploadError': null,
         'updatedAt': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
+      };
+      if (currentPhotoUrl.isEmpty) {
+        payload['photoUrl'] = urls.first;
+      }
+      await palletRef.set(payload, SetOptions(merge: true));
     }
     return urls;
   }
