@@ -44,6 +44,15 @@ if ($IncludeStorage) {
     if ($LASTEXITCODE -ne 0) {
         throw "Storage could not be authorized to read Firestore roles."
     }
+
+    $storageCors = Join-Path $mobileDir "storage.cors.json"
+    $storageBucket = "gs://$projectId.firebasestorage.app"
+    & $gcloud storage buckets update $storageBucket `
+        --cors-file=$storageCors `
+        --quiet
+    if ($LASTEXITCODE -ne 0) {
+        throw "Storage CORS configuration failed for $Environment."
+    }
 }
 
 Push-Location $mobileDir
